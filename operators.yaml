@@ -1,0 +1,44 @@
+version: 1
+source_repo: StridingAI/SLM_data_curation
+dataset: Egostandard
+operators:
+  - id: input
+    module: operators.input_adapter.InputOperator
+    input: "Stage A episode reference"
+    output: "QualityEpisode[state[T,D], action[T,D], startup masks]"
+  - id: statistics
+    module: operators.statistics.StatisticsOperator
+    input: "Stage A dataset episode indices"
+    output: "StatisticsBundle[Stage1 thresholds, Stage3 quantiles, P4 lag]"
+  - id: stage1
+    module: operators.stage1.Stage1Operator
+    input: "QualityEpisode + Stage1 statistics"
+    output: "Stage1Result[abnormal_frames, discard reasons, metrics]"
+  - id: stage2
+    module: operators.stage2.Stage2Operator
+    input: "QualityEpisode + alignment lag"
+    output: "Stage2Result[discard, DA scores, lags]"
+  - id: stage3
+    module: operators.stage3.Stage3Operator
+    input: "QualityEpisode + global quantiles"
+    output: "Stage3Result[remove_frames, discard, excluded_count]"
+  - id: prefix
+    module: operators.prefix.PrefixOperator
+    input: "Stage1Result + Stage2Result + Stage3Result"
+    output: "PrefixDecision[first invalid frame, prefix keep mask]"
+  - id: stage4
+    module: operators.stage4.Stage4Operator
+    input: "QualityEpisode + PrefixDecision"
+    output: "StaticDecision[static frame removal mask]"
+  - id: decision
+    module: operators.decision.FinalDecisionOperator
+    input: "QualityEpisode + four stage results + PrefixDecision"
+    output: "EpisodeResult[discard, final frame mask, reasons, audit]"
+  - id: export
+    module: operators.export.ExportOperator
+    input: "Stage A dataset + EpisodeResult per episode"
+    output: "LeRobot shard[data, videos, metadata, quality reports]"
+  - id: aggregate
+    module: operators.aggregate.AggregateOperator
+    input: "LeRobot shards"
+    output: "Final merged dataset + relative statistics"

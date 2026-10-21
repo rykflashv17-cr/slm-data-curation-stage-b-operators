@@ -80,8 +80,18 @@ python3 run.py --repo-root "$SLM_DATA_CURATION_ROOT" list
 `run_config_stage_b.yaml`。工作区旧的相邻 `upstream/SLM_data_curation`
 快照只有 EgoStandard，不适合作为 v2 的上游输入。
 
-在独立 Python 环境中安装 `container/requirements-runtime.txt` 的依赖；
-运行下面的测试时再安装 `pytest`。
+在独立 Python 环境中安装运行依赖、原仓库引擎和本算子包；
+运行下面的测试时再安装 `pytest`：
+
+```bash
+python3 -m pip install -r container/requirements-runtime.txt
+python3 -m pip install -e "$SLM_DATA_CURATION_ROOT/qwen-manip-preprocess"
+python3 -m pip install --no-deps -e .
+```
+
+安装后 `slm-stage-b` 与 `python3 run.py` 是同一个命令入口。
+可安装包名固定为 `stage_b_operators`，即使 checkout 目录名带
+`_v2`，上文的 Python 导入示例也会指向 v2。
 Stage B 虽然读取对齐后的 `pseudo_v3`，仍会加载数据集适配器；
 H5 适配器需要 `h5py`，ABC130K 的 MCAP 工具可能需要 `mcap`、
 `mcap-protobuf-support`。导出视频还需 FFmpeg/ffprobe 和 libx264。
@@ -164,7 +174,6 @@ RoboMIND H5 分布式统计和 `quality` 命令；
 
 ```bash
 export SLM_DATA_CURATION_ROOT=/path/to/full/SLM_data_curation
-export PYTHONPATH="$(dirname "$PWD"):$SLM_DATA_CURATION_ROOT/qwen-manip-preprocess/src"
 python3 -m pytest -q tests
 ```
 

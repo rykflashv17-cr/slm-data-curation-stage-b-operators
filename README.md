@@ -43,6 +43,8 @@ v2 面向 [StridingAI/SLM_data_curation](https://github.com/StridingAI/SLM_data_
 需要 Python 3.10+、原仓库依赖，以及导出视频时的 FFmpeg/ffprobe。
 将 `--repo-root` 指向**完整**的原仓库检出；当前同级旧 `upstream/` 快照只含
 EgoStandard，不适合 v2 的全数据集运行。
+按 [安装说明](docs/USAGE.md#本机安装和检查) 装入虚拟环境后，既可使用
+`python run.py`，也可用命令 `slm-stage-b`。
 
 ```bash
 python run.py --repo-root /path/to/SLM_data_curation list

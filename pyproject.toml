@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slm-data-curation-stage-b-operators"
+version = "2.0.1"
+description = "Multi-dataset Stage B operators for StridingAI SLM_data_curation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+slm-stage-b = "stage_b_operators.run:main"
+
+[tool.setuptools]
+packages = ["stage_b_operators", "stage_b_operators.operators"]
+
+[tool.setuptools.package-dir]
+stage_b_operators = "."
+"stage_b_operators.operators" = "operators"
+
+[tool.setuptools.package-data]
+stage_b_operators = ["operators.yaml"]

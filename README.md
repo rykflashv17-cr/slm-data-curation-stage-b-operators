@@ -31,6 +31,9 @@ Stage2 的可选 `action.eef` 填充只改临时字段字典。Stage5 当前默�
 代码默认使用同级 `upstream/SLM_data_curation` 源码快照，或工作区中的 Git 检出；
 也可以通过 `--repo-root` / `SLM_DATA_CURATION_ROOT` 指向别的检出。
 
+已整理共享的 CPU 容器镜像，包含十个算子的运行依赖、构建文件、加载方法和
+真实数据验收记录，见 [`container/README.md`](container/README.md)。
+
 ```bash
 python run.py --repo-root /path/to/SLM_data_curation run \
   --input-root /path/to/stage_a_aligned \

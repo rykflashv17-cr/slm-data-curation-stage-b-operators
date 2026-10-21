@@ -1,0 +1,7 @@
+# Versions from the development environment used for the 2026-10-16 benchmark.
+numpy==2.5.2
+pandas==3.0.5
+pyarrow==25.0.1
+scipy==1.18.1
+PyYAML==6.0.3
+tqdm==4.70.0

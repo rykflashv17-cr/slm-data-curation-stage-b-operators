@@ -1,0 +1,9 @@
+# Patterns are relative to the slm_data_curation/ build context.
+benchmarks/**
+quality_smoke_2_20261015/**
+stage_b_operators/.git/**
+stage_b_operators/benchmarks/**
+stage_b_operators/tests/**
+stage_b_operators/docs/**
+**/__pycache__/**
+**/*.pyc

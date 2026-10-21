@@ -1,5 +1,7 @@
 # 多数据集 Stage B 算子使用说明
 
+![Stage B v2 的 16 个算子及数据流](stage_b_operator_io.png)
+
 ## 范围
 
 本目录封装 `StridingAI/SLM_data_curation` 的 Stage B 质量处理：

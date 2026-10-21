@@ -107,6 +107,10 @@ def test_stage_b_adapter_protocol(upstream_root: Path, dataset: str) -> None:
     engine = upstream_root / "qwen-manip-preprocess" / "src"
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(engine), env.get("PYTHONPATH"))))
+    if dataset == "abc_130k":
+        # This adapter creates a scratch directory when instantiated. Its
+        # production default is a PFS path unavailable on a developer Mac.
+        env["ABC130K_PFS_TMP"] = os.environ.get("TMPDIR", "/private/tmp")
     completed = subprocess.run(
         [sys.executable, "-c", _ADAPTER_PROBE, str(upstream_root / "datasets" / dataset)],
         env=env,

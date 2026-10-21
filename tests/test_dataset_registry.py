@@ -28,12 +28,11 @@ def _repo_root() -> Path:
     if configured:
         return Path(configured)
     candidates = (
-        Path("/private/tmp/SLM_data_curation_current"),
         Path(__file__).resolve().parents[2] / "upstream" / "SLM_data_curation",
         Path(__file__).resolve().parents[4] / "github" / "SLM_data_curation",
     )
     for path in candidates:
-        if (path / "datasets").is_dir():
+        if len(list((path / "datasets").rglob("run_config_stage_b.yaml"))) >= 12:
             return path
     pytest.skip("Upstream SLM_data_curation checkout is unavailable")
 

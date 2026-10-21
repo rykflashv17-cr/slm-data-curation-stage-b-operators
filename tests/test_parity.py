@@ -131,7 +131,7 @@ def test_export_operator_connects_to_upstream_orchestrator(tmp_path: Path) -> No
     quality_path.write_text(yaml.safe_dump(quality), encoding="utf-8")
     config = yaml.safe_load((package_dir / "run_config_stage_b.yaml").read_text(encoding="utf-8"))
     config["dataset"]["root"] = str(tmp_path)
-    config["dataset"]["input_format"] = "raw"
+    config["dataset"]["input_format"] = "pseudo_v3"
     config["pipeline"].update({"output_mode": "report", "num_workers": 1, "force_skip_gate": True})
     config["media"]["require_camera_top"] = False
     config["quality_config_path"] = str(quality_path)

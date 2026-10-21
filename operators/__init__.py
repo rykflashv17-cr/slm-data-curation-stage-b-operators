@@ -1,22 +1,38 @@
-"""Ten Stage B operators, in execution order.
+"""Stage B operator interfaces, loaded on demand for fast catalog inspection."""
 
-The order is input, statistics, Stage1, Stage2, Stage3, prefix,
-Stage4, final decision, shard export, and dataset aggregation.
-"""
+from __future__ import annotations
 
-from .aggregate import AggregateOperator
-from .decision import FinalDecisionOperator
-from .export import ExportOperator
-from .input_adapter import InputOperator
-from .prefix import PrefixOperator
-from .stage1 import Stage1Operator
-from .stage2 import Stage2Operator
-from .stage3 import Stage3Operator
-from .stage4 import Stage4Operator
-from .statistics import StatisticsOperator
+from importlib import import_module
 
-__all__ = [
-    "InputOperator", "StatisticsOperator", "Stage1Operator", "Stage2Operator",
-    "Stage3Operator", "PrefixOperator", "Stage4Operator",
-    "FinalDecisionOperator", "ExportOperator", "AggregateOperator",
-]
+_EXPORTS = {
+    "ConfigOperator": "config",
+    "StageBDatasetSpec": "config",
+    "list_stage_b_datasets": "config",
+    "resolve_stage_b_dataset": "config",
+    "GateOperator": "gate",
+    "DiscoverOperator": "discover",
+    "AlignedEpisodeOperator": "aligned",
+    "ReportOperator": "report",
+    "StatisticsOperator": "statistics",
+    "InputOperator": "input_adapter",
+    "Stage1Operator": "stage1",
+    "Stage2Operator": "stage2",
+    "Stage3Operator": "stage3",
+    "PrefixOperator": "prefix",
+    "Stage4Operator": "stage4",
+    "FinalDecisionOperator": "decision",
+    "QualityOperator": "quality",
+    "ExportOperator": "export",
+    "AggregateOperator": "aggregate",
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    value = getattr(import_module(f".{module_name}", __name__), name)
+    globals()[name] = value
+    return value

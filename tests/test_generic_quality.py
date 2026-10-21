@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 import pyarrow as pa
@@ -181,3 +183,58 @@ def test_report_pipeline_matches_upstream_on_pseudo_v3(tmp_path: Path) -> None:
         np.testing.assert_array_equal(got.step_validity_mask, want.step_validity_mask)
     assert (tmp_path / "new" / "reports" / "quality_report.json").is_file()
     assert (tmp_path / "new" / "reports" / "exclusion_log.jsonl").is_file()
+
+
+def test_h5_distributed_stats_reads_stage_a_parquet(tmp_path: Path) -> None:
+    """The upstream stats-phase branch bypasses P3, so its hook needs coverage."""
+    from stage_b_operators.operators.export import ExportOperator
+
+    package = _repo_root() / "datasets" / "Robomindv2" / "ur_h5"
+    source = tmp_path / "stage_a_aligned"
+    _write_pseudo_v3(source, [_ur_fields()])
+    config = yaml.safe_load((package / "run_config_stage_b.yaml").read_text(encoding="utf-8"))
+    config["dataset"]["root"] = str(source)
+    config["pipeline"].update({
+        "num_workers": 1,
+        "export_workers": 1,
+        "output_mode": "report",
+        "force_skip_gate": True,
+    })
+    config["media"]["require_camera_top"] = False
+    config_path = tmp_path / "run_config.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    result = ExportOperator().run(
+        package_dir=package,
+        config_path=config_path,
+        output_dir=tmp_path / "stats_out",
+        stats_cache_dir=tmp_path / "stats_cache",
+        stats_only=True,
+        stats_phase="pass1",
+        shard_id=0,
+        num_shards=1,
+        force_skip_gate=True,
+    )
+    assert result == 0
+    assert (tmp_path / "stats_cache" / "partials" / "global_pass1_shard0.npz").is_file()
+    assert (tmp_path / "stats_cache" / "partials" / "stage1_pass1_shard0.npz").is_file()
+
+
+def test_quality_cli_reads_parquet_without_video_export(tmp_path: Path) -> None:
+    source = tmp_path / "stage_a_aligned"
+    _write_pseudo_v3(source, [_ego_fields()])
+    report_dir = tmp_path / "quality"
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().parents[1] / "run.py"),
+        "--repo-root", str(_repo_root()),
+        "quality", "--dataset", "Egostandard",
+        "--input-root", str(source),
+        "--output-dir", str(report_dir),
+        "--sample-size", "1",
+        "--workers", "1",
+    ]
+    completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (report_dir / "reports" / "quality_report.json").is_file()
+    assert not (report_dir / "videos").exists()

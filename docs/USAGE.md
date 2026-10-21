@@ -21,6 +21,52 @@ RoboMind v2 的两个 H5 包和 InternDataA1 的四个本体。另有
 6 个为 `aggregated_v3`。`--output-layout` 只在明确需要覆盖配置时使用；
 不要假设每个数据集都应该强制聚合。
 
+## 16 个算子的输入、输出与使用范围
+
+下表对应 [`operators.yaml`](../operators.yaml) 中的类。数据集级算子处理一批
+episode；逐条算子只处理一条 episode 的质量数组。默认 `run` 调用原仓库
+P0/P2/P7 编排，其中门禁、发现、标准化读入和同步导出由原仓库执行；
+同名包装类可单独调用。P3 的质量算子由本项目实际组合执行。
+
+| 算子 | 输入 → 输出 | 使用位置 |
+|---|---|---|
+| `ConfigOperator` | 仓库与包名/YAML → `StageBDatasetSpec` | 选择数据集、阈值与输出布局 |
+| `GateOperator` | `StageBDatasetSpec` + `review_checklist.yaml` → `GateDecision` | 人工审核门禁 |
+| `DiscoverOperator` | Stage A 根目录 + 采样/分片参数 → `DiscoveryResult[refs, stats_refs]` | 选 episode；保留全局统计集合 |
+| `StatisticsOperator` | `PipelineConfig` + 全部选中 episode → `StatisticsBundle` | 全局 Stage1/3 阈值和 lag |
+| `InputOperator` | 一条 Stage A Parquet + adapter → `QualityEpisode` | 转到本数据集质量空间 |
+| `Stage1Operator` | `QualityEpisode` + 全局阈值 → `Stage1Result` | 突变与故障检测 |
+| `Stage2Operator` | `QualityEpisode` + lag → `Stage2Result` | 状态与动作方向一致性 |
+| `Stage3Operator` | `QualityEpisode` + 分位数 → `Stage3Result` | 极值检测 |
+| `PrefixOperator` | Stage1–3 结果 → `PrefixDecision` | 计算首个异常帧与有效前缀 |
+| `Stage4Operator` | 有效前缀中的 `QualityEpisode` → `StaticDecision` | 缩短静止段 |
+| `FinalDecisionOperator` | 各阶段结果 → `EpisodeResult` | 丢弃原因与逐帧保留掩码 |
+| `QualityOperator` | 一条 episode + 统计 → `EpisodeResult` | 组合上述七个逐条算子 |
+| `AlignedEpisodeOperator` | `EpisodeRef` + adapter → `AlignedEpisode[StandardEpisode, arrays]` | Stage B identity P1 读入 |
+| `ReportOperator` | 多个 `EpisodeResult` + 统计摘要 → 3 个 JSON/JSONL 报告 | 质量审计 |
+| `ExportOperator` | 包配置 + Stage A 集合 → Parquet、视频、元数据分片 | 调原仓库 P0–P7，并注入 v2 P3 |
+| `AggregateOperator` | 多个分片 + 包配置 → 最终数据集、相对统计 | 调该包 `merge_shards.py` |
+
+常用调用方式是下文的 `list`、`quality`、`run`、`merge` 命令。
+如果要在 Python 中单独检查数据集与样本选择，可直接使用前几个类：
+
+```python
+from pathlib import Path
+from stage_b_operators.operators import ConfigOperator, GateOperator, DiscoverOperator
+
+spec = ConfigOperator().run(Path("/path/to/SLM_data_curation"), "Egostandard")
+gate = GateOperator().run(spec, output_mode="report")
+selection = DiscoverOperator().run(
+    spec, input_root=Path("/path/to/stage_a_aligned"), sample_size=10
+)
+print(spec.quality_config_path, spec.output_layout, len(selection.refs))
+```
+
+逐条质量算子使用 `robot_data_processing.pipeline.PipelineConfig` 和
+`StatisticsBundle`。需要先安装本数据集的 Stage B adapter hook 并计算
+全局统计；直接集成时可参考 [`pipeline.py`](../pipeline.py)。
+单独调用 `Stage1Operator` 等不会自动执行后续裁决或导出。
+
 ## 本机安装和检查
 
 ```bash
@@ -63,13 +109,13 @@ python3 run.py --repo-root "$SLM_DATA_CURATION_ROOT" run \
   --sample-size 8 --workers 4 --export-workers 4
 ```
 
-`quality` 使用原仓库 Stage B 的 report 模式，不写筛选后视频；
-P3 报告位于 `output/_quality/reports/`。`run` 依据所选包的配置写
-质量报告及 LeRobot 文件。原仓库的人工审核门禁仍生效；
-`--force-skip-gate` 仅用于实验。结果应检查 `run_meta.json`、
-`_quality/reports/quality_report.json`、
-`_quality/reports/exclusion_log.jsonl`，以及导出模式下的
-`data/`、`videos/` 和 `meta/`。
+`quality` 只运行 P3 质量检测，直接在 `output/reports/` 写
+`quality_report.json`、`exclusion_log.jsonl` 和
+`optimal_lags.json`；它不检查输入视频，也不写筛选后视频。
+`run` 执行原仓库的完整 Stage B 编排，报告在
+`output/_quality/reports/`，另有 `run_meta.json`、`data/`、
+`videos/` 和 `meta/`。两者都执行人工审核门禁；
+`--force-skip-gate` 仅用于实验。
 
 可用 `--dataset InternDataA1_sim/franka` 选择嵌套包，也可传
 `--package-dir` 或 `--config`。这三种方式都应指向**同一个**上游包；
@@ -110,14 +156,16 @@ python3 run.py --repo-root "$SLM_DATA_CURATION_ROOT" merge \
 
 ## 测试边界
 
-`tests/test_stage_b_configs.py` 会检查 12 个配置及适配器接口，
-`tests/test_parity.py` 现有的 Episode 级数值对照覆盖 EgoStandard。
+`tests/test_stage_b_configs.py` 会检查 12 个配置及适配器接口；
+`tests/test_generic_quality.py` 测试真实 `pseudo_v3` 布局的质量读取、
+RoboMIND H5 分布式统计和 `quality` 命令；
+`tests/test_parity.py` 的 Episode 级数值对照覆盖 EgoStandard。
 前者要求明确设置完整上游路径，避免误用旧单包快照：
 
 ```bash
 export SLM_DATA_CURATION_ROOT=/path/to/full/SLM_data_curation
 export PYTHONPATH="$(dirname "$PWD"):$SLM_DATA_CURATION_ROOT/qwen-manip-preprocess/src"
-python3 -m pytest -q tests/test_stage_b_configs.py tests/test_parity.py
+python3 -m pytest -q tests
 ```
 
 这些测试不等于 12 个数据集的端到端验收。正式覆盖还需逐包用真实

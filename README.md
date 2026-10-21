@@ -1,84 +1,76 @@
-# Stage B：十算子封装
+# SLM Data Curation Stage B operators · v2
 
-本目录整理 `StridingAI/SLM_data_curation` 的 **EgoStandard Stage B**。算法复用上游
-`robot_data_processing`；此目录只负责明确算子边界和编排，不修改 Stage A 输入。
-当前对照的上游版本是 `main` 的 `0e694db`。运行时应使用同一版本，以免上游接口漂移。
+v2 面向 [StridingAI/SLM_data_curation](https://github.com/StridingAI/SLM_data_curation)
+的**整个 Stage B**，以该仓库 `48e1595` 的 12 个
+`datasets/**/run_config_stage_b.yaml` 为对照。v1 仅针对 EgoStandard，已归档为
+[`v1.0.0`](https://github.com/rykflashv17-cr/slm-data-curation-stage-b-operators/tree/v1.0.0)。
+这里的 Stage1–4 指原仓库的质量规则，不是之前另一个 EgoStandard 清洗管线的 S1–S4。
 
-## 算子与执行顺序
+## 使用范围
 
-![Stage B 十算子的输入输出数据结构](docs/stage_b_operator_io.png)
+- 输入是 **Stage A 已对齐的 `pseudo_v3` 单根数据集**，质量空间与阈值由各数据集包的
+  adapter 和 `quality.yaml` / `quality_stage_b.yaml` 决定。
+- 支持原仓库目前全部 12 个 Stage B 包：`Egostandard`、`Egoverse`、
+  `egodex_lerobot_v21`、`abc_130k`、`AgibotWorld_Beta`、`humanoid_merged`、
+  `Robomindv2/agilex_h5`、`Robomindv2/ur_h5`、`InternDataA1_sim/` 下的
+  `franka`、`genie1`、`lift2`、`split_aloha`。
+- 输出布局遵循各包原配置：6 个 `pseudo_v3`、6 个 `aggregated_v3`。
+  质量统计必须先覆盖全部选中 episode，然后才能分片筛选和导出。
+- 不运行 Stage A 的原始数据接入、几何修复或对齐工作。没有 Stage B 配置的入口不在
+  此版本范围内。开启 Stage5 或分辨率统一的包继续使用原仓库相应流程。
 
-| # | 算子 | 输入 → 输出 | 实现 |
-|---|---|---|---|
-| 1 | 数据读取与质量空间转换 | Stage A episode → `QualityEpisode` | `operators/input_adapter.py` |
-| 2 | 全局统计 | episode 集合 → Stage1 阈值、Stage3 分位数、P4 lag | `operators/statistics.py` |
-| 3 | Stage1 突变检测 | episode + Stage1 阈值 → `Stage1Result` | `operators/stage1.py` |
-| 4 | Stage2 状态动作一致性 | episode + lag → `Stage2Result` | `operators/stage2.py` |
-| 5 | Stage3 极值检测 | episode + 分位数 → `Stage3Result` | `operators/stage3.py` |
-| 6 | 前缀裁决 | Stage1–3 结果 → `PrefixDecision` | `operators/prefix.py` |
-| 7 | Stage4 静止段缩短 | episode 的有效前缀 → `StaticDecision` | `operators/stage4.py` |
-| 8 | 最终裁决 | 前缀、静止段和尾部规则 → `EpisodeResult` | `operators/decision.py` |
-| 9 | 分片同步导出 | `EpisodeResult` + Stage A → parquet、视频、报告 | `operators/export.py` |
-| 10 | 数据集归并 | 分片 → 最终数据集及相对统计 | `operators/aggregate.py` |
+## 算子边界
 
-`operators.yaml` 给出机器可读的输入输出清单。Stage1–4 各有独立 Python 类和 `run()`。
-Stage2 的可选 `action.eef` 填充只改临时字段字典。Stage5 当前默认关闭，沿用上游可选实现。
-前缀截断、Stage4 稀疏删帧、短 episode 丢弃和审计字段与上游保持一致。
+`operators.yaml` 是机器可读的输入输出清单。核心路径为：
 
-## 依赖与运行
+| 顺序 | 算子 | 输入 → 输出 |
+|---|---|---|
+| 1 | 配置解析、人工审核门禁、episode 发现 | 仓库与 Stage B 配置 → 包规格、审核结果、`EpisodeRef` |
+| 2 | 全局统计 | 所有选中 episode → Stage1 阈值、Stage3 分位数、lag 缓存 |
+| 3 | 质量读取与转换 | Stage A Parquet + 数据集 adapter → `QualityEpisode` |
+| 4 | Stage1、Stage2、Stage3 | `QualityEpisode` + 统计 → 三组检测结果 |
+| 5 | 前缀裁决、Stage4、最终裁决 | 检测结果 + 质量数据 → `EpisodeResult` 和逐帧保留掩码 |
+| 6 | 对齐读取、报告、分片导出 | 原 episode + 掩码 → 报告、Parquet、视频、元数据 |
+| 7 | 数据集归并 | 分片 → 重编号后的数据集、相对统计 |
 
-需要 Python 3.10+、上游 `qwen-manip-preprocess` 的依赖，以及视频导出所需的 FFmpeg。
-代码默认使用同级 `upstream/SLM_data_curation` 源码快照，或工作区中的 Git 检出；
-也可以通过 `--repo-root` / `SLM_DATA_CURATION_ROOT` 指向别的检出。
+这些边界对应 16 个可调用类；其中 `QualityOperator` 把 Stage1–4 等类组合成逐条质量计算。
+视频、Parquet 和元数据的写出仍由原仓库 P7 在同一轮中同步执行，保证帧索引一致；
+`ExportOperator` 负责把 v2 质量结果接入原仓库编排。审核、发现、对齐读取也保留原仓库
+编排执行，并提供独立包装类供单独调用。请参阅 [完整算子表与用法](docs/USAGE.md)。
 
-已整理共享的 CPU 容器镜像，包含十个算子的运行依赖、构建文件、加载方法和
-真实数据验收记录，见 [`container/README.md`](container/README.md)。
+## 快速使用
+
+需要 Python 3.10+、原仓库依赖，以及导出视频时的 FFmpeg/ffprobe。
+将 `--repo-root` 指向**完整**的原仓库检出；当前同级旧 `upstream/` 快照只含
+EgoStandard，不适合 v2 的全数据集运行。
+
+```bash
+python run.py --repo-root /path/to/SLM_data_curation list
+```
+
+```bash
+python run.py --repo-root /path/to/SLM_data_curation quality \
+  --dataset InternDataA1_sim/franka \
+  --input-root /path/to/stage_a_aligned \
+  --output-dir /path/to/stage_b_report --sample-size 10 --workers 4
+```
 
 ```bash
 python run.py --repo-root /path/to/SLM_data_curation run \
+  --dataset InternDataA1_sim/franka \
   --input-root /path/to/stage_a_aligned \
-  --output-dir /path/to/stage_b_operator_run \
-  --sample-size 10 --workers 4 --output-mode report
+  --output-dir /path/to/stage_b_shard \
+  --sample-size 10 --workers 4 --export-workers 2
 ```
 
-只检查 Stage1–4 并生成质量报告时，可直接运行算子 1–8。这个入口不读取视频，
-也不需要 FFmpeg：
+`quality` 强制只生成报告，不写筛选后的视频；`run` 使用该包 Stage B 配置的
+`output_mode` 和输出布局，分片归并需单独执行。全量分片、共享统计和归并命令见
+[使用说明](docs/USAGE.md)。Docker 构建输入与限制见 [容器说明](container/README.md)。
 
-```bash
-python run.py quality --input-root /path/to/stage_a_aligned \
-  --output-dir /path/to/quality_report --sample-size 10 --workers 4
-```
+## 版本与验证
 
-全量分片沿用上游的共享统计策略：先运行 `--stats-only --stats-cache-dir <dir>`；
-然后对每个分片运行 `--shard-id i --num-shards N --stats-cache-dir <dir>
---export-shard-only`。最后：
-
-```bash
-python run.py --repo-root /path/to/SLM_data_curation merge \
-  --config /path/to/SLM_data_curation/datasets/Egostandard/run_config_stage_b.yaml \
-  --shard-dir /path/to/shard_0 --shard-dir /path/to/shard_1 \
-  --output-dir /path/to/stage_b_cleaned
-```
-
-不传 `--input-root` 时使用上游 `run_config_stage_b.yaml` 的输入目录。质量阈值仍由上游
-`datasets/Egostandard/quality.yaml` 提供。`run` 命令不执行 `merge`，避免意外把分片写入
-最终目录。运行时输出 `quality_report.json`、`exclusion_log.jsonl`，导出时继续生成上游的
-`frame_removal.json`、`episode_discard.json` 等审计文件。
-
-## 验证
-
-`tests/test_parity.py` 使用真实 parquet 小样本比较原版与算子版的每条 episode 判定、
-逐帧保留掩码、审计指标，并比较两套完整统计与报告流程的结果。
-
-```bash
-PYTHONPATH=/path/to/SLM_data_curation/qwen-manip-preprocess/src:\
-/path/to/ryk/slm_data_curation python -m pytest -q tests/test_parity.py
-```
-
-当前本地没有完整 Stage A 数据集和 FFmpeg；视频导出、分片归并还需要在开发机上做
-小样本验收。
-
-开发机 `ryk` 部署路径为 `/mnt/pfs/Data/ryk/slm_data_curation/`。2026-10-15 已用
-`Egostandard_stageA_261012` 的前 2 条 episode 完成 `quality` 实测：1796 帧进入报告，
-两条都保留。完整 `run` 的视频检查需要 `ffprobe`，视频导出还需要 `ffmpeg`；
-当前开发机环境未提供这两个命令，因此尚未做视频导出与归并实测。
+v1 的已发布提交为 `32302b7`；v2 从其标签分出 `v2` 分支，保留原本本地
+`benchmarks/` 数据。2026-10-21 在上游 `48e1595` 上运行 40 项测试通过：
+覆盖 12 包配置与 adapter、EgoStandard 逐帧对照、RoboMIND H5 分布式统计、
+以及 `quality` 命令。尚未逐包用真实 Stage A 视频验收导出和两种布局的
+分片归并；v1 的 EgoStandard 容器实测不能代替 v2 的验收。

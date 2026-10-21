@@ -1,4 +1,4 @@
-"""10. Merge exported Stage B shards and compute final relative statistics."""
+"""Merge exported Stage B shards and compute final relative statistics."""
 
 from __future__ import annotations
 
@@ -17,13 +17,22 @@ class AggregateOperator:
         shard_dirs: list[Path],
         output_dir: Path,
         config_path: Path,
-        output_layout: str = "aggregated_v3",
+        output_layout: str | None = None,
         merge_workers: int | None = None,
         relative_stats_workers: int | None = None,
     ) -> dict[str, Any]:
         if not shard_dirs:
             raise ValueError("At least one shard directory is required")
-        script = Path(package_dir) / "merge_shards.py"
+        import yaml
+
+        package_dir = Path(package_dir).expanduser().resolve()
+        config_path = Path(config_path).expanduser().resolve()
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        expected_layout = (config.get("export") or {}).get("layout")
+        output_layout = output_layout or expected_layout
+        if output_layout not in ("pseudo_v3", "aggregated_v3"):
+            raise ValueError(f"Invalid Stage B output layout: {output_layout!r}")
+        script = package_dir / "merge_shards.py"
         if not script.is_file():
             raise FileNotFoundError(script)
         command = [sys.executable, str(script)]
@@ -31,7 +40,7 @@ class AggregateOperator:
             command.extend(["--shard-dir", str(Path(shard).resolve())])
         command.extend([
             "--output-dir", str(Path(output_dir).resolve()),
-            "--config", str(Path(config_path).resolve()),
+            "--config", str(config_path),
             "--output-layout", output_layout,
         ])
         if merge_workers is not None:

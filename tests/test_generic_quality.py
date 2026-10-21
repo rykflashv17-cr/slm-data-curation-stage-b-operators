@@ -18,9 +18,9 @@ from robot_data_processing.pipeline import pipeline_config_from_yaml
 from robot_data_processing.stage1_stats import Stage1GlobalStats
 from robot_data_processing.types import GlobalStats
 
-from stage_b_operators_v2.contracts import StatisticsBundle
-from stage_b_operators_v2.operators.input_adapter import InputOperator
-from stage_b_operators_v2.pipeline import process_episode, run_pipeline
+from stage_b_operators.contracts import StatisticsBundle
+from stage_b_operators.operators.input_adapter import InputOperator
+from stage_b_operators.pipeline import process_episode, run_pipeline
 
 
 def _repo_root() -> Path:

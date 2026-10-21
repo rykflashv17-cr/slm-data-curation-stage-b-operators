@@ -1,9 +1,8 @@
-# Patterns are relative to the slm_data_curation/ build context.
-benchmarks/**
-quality_smoke_2_20261015/**
-stage_b_operators/.git/**
-stage_b_operators/benchmarks/**
-stage_b_operators/tests/**
-stage_b_operators/docs/**
+# Patterns are relative to a local build context with upstream/ and
+# stage_b_operators_v2/ siblings. Never send private Git history to the builder.
+**/.git/**
+upstream/SLM_data_curation/review/audits/**
+stage_b_operators_v2/tests/**
+stage_b_operators_v2/docs/**
 **/__pycache__/**
 **/*.pyc

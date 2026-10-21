@@ -5,3 +5,8 @@ pyarrow==25.0.1
 scipy==1.18.1
 PyYAML==6.0.3
 tqdm==4.70.0
+# Dataset adapters are imported even when Stage B reads aligned pseudo_v3.
+h5py==3.14.0
+mcap>=1.2,<2
+mcap-protobuf-support>=0.5,<1
+protobuf>=4.25,<7

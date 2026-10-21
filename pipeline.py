@@ -1,21 +1,14 @@
-"""Compose the ten operators while preserving upstream Stage B policy and P7 output."""
+"""Run the shared Stage-B quality policy on any Stage-A pseudo-v3 dataset."""
 
 from __future__ import annotations
 
 import json
 import multiprocessing as mp
 import time
-
-import numpy as np
+from pathlib import Path
 
 from robot_data_processing.ignore_list import filter_episode_indices, load_ignore_episode_lists
 from robot_data_processing.lerobot_export import export_lerobot_from_results, verify_lerobot_alignment
-from robot_data_processing.report import (
-    build_quality_report,
-    write_exclusion_log,
-    write_optimal_lags,
-    write_quality_report,
-)
 from robot_data_processing.stages.stage4_static_interval import Stage4Config
 from robot_data_processing.stages.stage5_frame_alignment import Stage5Config
 from robot_data_processing.stages.state_action_temporal_alignment import (
@@ -26,45 +19,36 @@ from robot_data_processing.stages.state_action_temporal_alignment import (
 from robot_data_processing.types import EpisodeResult
 
 from .contracts import StatisticsBundle
-from .operators.decision import FinalDecisionOperator
-from .operators.input_adapter import InputOperator
-from .operators.prefix import PrefixOperator
-from .operators.stage1 import Stage1Operator
-from .operators.stage2 import Stage2Operator
-from .operators.stage3 import Stage3Operator
-from .operators.stage4 import Stage4Operator
+from .operators.input_adapter import install_stage_b_quality_adapter, stage_b_adapter_io
+from .operators.quality import QualityOperator
+from .operators.report import ReportOperator
 from .operators.statistics import StatisticsOperator
 
 _WORKER_CFG = None
 _WORKER_STATS: StatisticsBundle | None = None
 
 
-def process_episode(episode_index: int, cfg=None, statistics: StatisticsBundle | None = None) -> EpisodeResult:
-    """Run Stage1–4 and both decision operators for one source episode."""
+def process_episode(
+    episode_index: int,
+    cfg=None,
+    statistics: StatisticsBundle | None = None,
+    *,
+    package_dir: Path | None = None,
+) -> EpisodeResult:
+    """Run Stage1–4 and both decision operators for one aligned episode."""
     cfg = cfg or _WORKER_CFG
     statistics = statistics or _WORKER_STATS
     if cfg is None or statistics is None:
         raise RuntimeError("process_episode needs PipelineConfig and StatisticsBundle")
-
-    episode = InputOperator().run(episode_index, cfg)
-    if episode is None:
-        return EpisodeResult(
-            episode_index=episode_index, num_frames=0, discard=True,
-            discard_reasons=["missing_parquet"],
-            step_validity_mask=np.array([], dtype=np.int8),
-        )
-    stage1 = Stage1Operator().run(episode, cfg, statistics)
-    stage2 = Stage2Operator().run(episode, cfg, statistics)
-    stage3 = Stage3Operator().run(episode, cfg, statistics)
-    prefix = PrefixOperator().run(episode.num_frames, stage1, stage2, stage3, cfg)
-    stage4 = Stage4Operator().run(episode, prefix.valid_end, cfg)
-    return FinalDecisionOperator().run(
-        episode, cfg, statistics, stage1, stage2, stage3, prefix, stage4
-    )
+    if package_dir is not None and not Path(package_dir).is_dir():
+        raise FileNotFoundError(package_dir)
+    return QualityOperator().run(episode_index, cfg, statistics)
 
 
 def _init_worker(cfg, statistics: StatisticsBundle) -> None:
     global _WORKER_CFG, _WORKER_STATS
+    # In a forked worker, replace any inherited raw H5/MCAP loader.
+    install_stage_b_quality_adapter()
     _WORKER_CFG, _WORKER_STATS = cfg, statistics
 
 
@@ -78,10 +62,19 @@ def run_pipeline(
     stats_episode_indices: list[int] | None = None,
     show_progress: bool = True,
     timings: dict[str, float] | None = None,
+    *,
+    package_dir: Path | None = None,
 ) -> list[EpisodeResult]:
-    """Drop-in P3 replacement for ``robot_data_processing.pipeline.run_pipeline``."""
+    """Drop-in P3 replacement; statistics and quality read Stage-A Parquet.
+
+    ``package_dir`` is optional because the upstream orchestrator supplies the
+    dataset package through its adapter registry and calls P3 with the original
+    signature. A direct caller may pass it for early path validation.
+    """
     from tqdm import tqdm
 
+    if package_dir is not None and not Path(package_dir).is_dir():
+        raise FileNotFoundError(package_dir)
     started = time.perf_counter()
     ignore_paths = list(cfg.ignore_episodes_paths)
     if not ignore_paths and cfg.ignore_episodes_path is not None:
@@ -137,15 +130,16 @@ def run_pipeline(
 
     if cfg.output_mode in ("filter", "both"):
         export_started = time.perf_counter()
-        summary = export_lerobot_from_results(
-            source_root=cfg.dataset_root, output_root=cfg.output_dir,
-            schema=cfg.schema, results=results,
-            alignment_lag=align_lag, alignment_enabled=p4_plan.apply_shift,
-            recompute_video_stats=cfg.recompute_video_stats,
-            export_workers=cfg.export_workers, parallel_videos=cfg.parallel_videos,
-            show_progress=show_progress, alignment_plan=p4_plan.name,
-            manual_delay=p4_plan.manual_delay,
-        )
+        with stage_b_adapter_io():
+            summary = export_lerobot_from_results(
+                source_root=cfg.dataset_root, output_root=cfg.output_dir,
+                schema=cfg.schema, results=results,
+                alignment_lag=align_lag, alignment_enabled=p4_plan.apply_shift,
+                recompute_video_stats=cfg.recompute_video_stats,
+                export_workers=cfg.export_workers, parallel_videos=cfg.parallel_videos,
+                show_progress=show_progress, alignment_plan=p4_plan.name,
+                manual_delay=p4_plan.manual_delay,
+            )
         if not cfg.skip_alignment_verify:
             alignment = verify_lerobot_alignment(
                 cfg.output_dir, [episode.episode_index for episode in summary.episodes]
@@ -157,8 +151,9 @@ def run_pipeline(
             timings["p3_lerobot_export"] = round(time.perf_counter() - export_started, 3)
 
     if cfg.output_mode in ("report", "both"):
-        report = build_quality_report(
+        ReportOperator().run(
             results,
+            cfg.output_dir,
             stats_meta={
                 "num_frames": statistics.global_stats.num_frames,
                 "num_episodes": statistics.global_stats.num_episodes,
@@ -189,9 +184,6 @@ def run_pipeline(
                 "ignore_episodes_paths": [str(p) for p in ignore_paths],
             },
         )
-        write_quality_report(cfg.output_dir / "reports" / "quality_report.json", report)
-        write_exclusion_log(cfg.output_dir / "reports" / "exclusion_log.jsonl", results)
-        write_optimal_lags(cfg.output_dir / "reports" / "optimal_lags.json", results)
 
     if timings is not None:
         timings["p3_pipeline_total"] = round(time.perf_counter() - started, 3)

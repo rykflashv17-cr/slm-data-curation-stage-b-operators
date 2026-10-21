@@ -1,4 +1,4 @@
-"""2. Dataset-level Stage1, Stage3 and optional P4 lag statistics."""
+"""Dataset-level Stage1, Stage3 and optional P4 lag statistics on pseudo-v3."""
 
 from __future__ import annotations
 
@@ -12,10 +12,17 @@ from robot_data_processing.stages.state_action_temporal_alignment import (
 from robot_data_processing.stats import load_or_compute_stats
 
 from ..contracts import StatisticsBundle
+from .input_adapter import stage_b_adapter_io
 
 
 class StatisticsOperator:
     def run(self, cfg, episode_indices: list[int], *, show_progress: bool = True) -> StatisticsBundle:
+        with stage_b_adapter_io():
+            return self._run_from_parquet(cfg, episode_indices, show_progress=show_progress)
+
+    def _run_from_parquet(
+        self, cfg, episode_indices: list[int], *, show_progress: bool,
+    ) -> StatisticsBundle:
         global_cache = cfg.stats_cache_path or cfg.output_dir / "cache" / "global_stats.npz"
         stage1_cache = cfg.stage1_stats_cache_path or cfg.output_dir / "cache" / "stage1_global_stats.npz"
         alignment_cache = cfg.state_action_lag_cache_path or cfg.output_dir / "cache" / "state_action_lag.npz"

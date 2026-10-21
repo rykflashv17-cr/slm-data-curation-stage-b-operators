@@ -1,4 +1,9 @@
-"""Small, explicit contracts between the Stage B operators."""
+"""Dataset-neutral contracts between Stage-B quality operators.
+
+The quality arrays are derived from Stage-A pseudo-v3 Parquet. Their width is
+specified by each dataset's quality YAML, while frame count and identity are
+kept stable through Stage1–4 and the final decision.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class QualityEpisode:
+    """One aligned episode represented in the configured quality space."""
+
     episode_index: int
     path: Path
     state: np.ndarray
@@ -21,6 +28,12 @@ class QualityEpisode:
     @property
     def num_frames(self) -> int:
         return int(self.state.shape[0])
+
+    def __post_init__(self) -> None:
+        if self.state.ndim != 2 or self.action.ndim != 2:
+            raise ValueError("Stage-B quality state/action must be 2D arrays")
+        if self.state.shape[0] != self.action.shape[0]:
+            raise ValueError("Stage-B quality state/action frame counts differ")
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,46 @@
+version: 3
+source_revision: 0e694dbc9706b2a5bac8e550f8cd9de18f5b7473
+source_format: mcap
+output_format: mcap
+quality_policy: upstream_stage_b_stage1_to_stage4
+dataset_profile: configs/abc_130k.yaml
+operators:
+  - id: mcap_input
+    class: stage_b_mcap_v3.operators.McapInputOperator
+    input: McapEpisodeRef + McapSpec + dataset adapter
+    output: QualityEpisode[state, action, frame_times_ns, exclusion_masks]
+  - id: global_stats
+    class: stage_b_mcap_v3.operators.GlobalStatsOperator
+    input: list[McapEpisodeRef] + quality config
+    output: StatisticsBundle[Stage1 thresholds, Stage3 quantiles, alignment lag]
+  - id: gripper_gap
+    class: stage_b_mcap_v3.operators.GripperGapOperator
+    input: QualityEpisode + McapSpec[source.gripper_gap]
+    output: GripperGapDecision[valid_mask, invalid_by_side, invalid_ranges]
+  - id: stage1
+    class: stage_b_mcap_v3.operators.Stage1Operator
+    input: QualityEpisode + StatisticsBundle
+    output: Stage1Result[abnormal_frames, faults, reasons]
+  - id: stage2
+    class: stage_b_mcap_v3.operators.Stage2Operator
+    input: QualityEpisode + StatisticsBundle
+    output: Stage2Result[discard, direction_agreement, reasons]
+  - id: stage3
+    class: stage_b_mcap_v3.operators.Stage3Operator
+    input: QualityEpisode + StatisticsBundle
+    output: Stage3Result[remove_frames, discard, reasons]
+  - id: stage4
+    class: stage_b_mcap_v3.operators.Stage4Operator
+    input: QualityEpisode + valid_prefix_end
+    output: StaticDecision[remove_frames, static_run_metrics]
+  - id: final_decision
+    class: stage_b_mcap_v3.operators.FinalDecisionOperator
+    input: QualityEpisode + Stage1Result + Stage2Result + Stage3Result + PrefixDecision + StaticDecision
+    output: CleaningDecision[frame_times_ns, keep_mask, discard_episode, reasons]
+  - id: mcap_export
+    class: stage_b_mcap_v3.operators.McapExportOperator
+    input: source MCAP + CleaningDecision + McapSpec
+    output: cleaned MCAP + audit JSON
+helpers:
+  - build_prefix: shared function between Stage3 and Stage4; not a registered operator
+  - judge_one: splits around GripperGapDecision invalid frames and invokes Stage1-4 and FinalDecision for each valid segment

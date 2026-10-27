@@ -1,0 +1,21 @@
+# Provisional Jindian Marvin profile for MCAP-in / MCAP-out validation.
+upstream_repo: ../../../../github/SLM_data_curation
+dataset_package: ../dataset_adapters/jindian_marvin
+quality_yaml: ../dataset_adapters/jindian_marvin/quality_stage_b.yaml
+workers: 2
+quality_overrides:
+  stage2_fill_missing_action_eef: false
+source:
+  format: mcap
+  root: /Users/flashryk/Desktop/jindian_test-简智夹爪
+  # Every second 50 Hz robot state defines the 25 Hz quality timeline.
+  # Video messages map to their nearest quality timestamp during export.
+  reference_topics: [/raw/marvin/joint_state]
+  gripper_gap:
+    left_topic: /raw/das/left/state
+    right_topic: /raw/das/right/state
+    max_nearest_gap_seconds: 0.6
+  static_topics: []
+output:
+  format: mcap
+  root: ../../jindian_stage_b_v3_test

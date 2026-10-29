@@ -2,7 +2,8 @@
 
 The quality canvas is 16d: seven left joints, seven right joints, and two
 gripper widths. TCP pose and camera topics stay in the source MCAP and are
-preserved by export, but are not part of this first quality profile.
+outside this profile's numerical quality checks. v4 retains or deletes the
+whole source MCAP; it does not export a new MCAP.
 """
 
 from __future__ import annotations
@@ -135,13 +136,15 @@ class JindianMarvinAdapter:
             (15, RIGHT_GRIP, "right_gripper_width"),
         ):
             if not samples[topic]:
-                # The gap operator will invalidate every frame for this side.
-                # A finite placeholder keeps the quality array rectangular;
-                # no placeholder frame can enter the final decision.
+                # Missing measurements remain explicitly unknown. The v4 gap
+                # precheck rejects this source before any numerical scoring or
+                # statistics. If coverage checking is disabled, the reader
+                # rejects these non-finite values instead of trusting zeros.
+                state[:, col] = np.nan
                 continue
-            # The dedicated gripper-gap operator marks stale measurements for
-            # removal. Keep arrays aligned here so the rest of an episode can
-            # still be judged on each side of a gap.
+            # The integrated quality detector checks measurement freshness.
+            # Preserve the v3 numerical alignment; v4 changes its rejection
+            # policy to whole-file rejection rather than section salvage.
             rows = _align_nearest(times, samples[topic], max_gap_ns=None, label=topic)
             state[:, col] = [row[name] for row in rows]
         # Gripper commands are event-like. Carry the last target; before the
@@ -152,7 +155,9 @@ class JindianMarvinAdapter:
             for col, name in ((14, "left_gripper_width"), (15, "right_gripper_width")):
                 if name in values:
                     action[at:, col] = values[name]
-        if not np.isfinite(state).all() or not np.isfinite(action).all():
+        missing_columns = [col for col, topic in ((14, LEFT_GRIP), (15, RIGHT_GRIP)) if not samples[topic]]
+        observed_columns = [col for col in range(16) if col not in missing_columns]
+        if not np.isfinite(state[:, observed_columns]).all() or not np.isfinite(action[:, observed_columns]).all():
             raise ValueError("non-finite joint or gripper values")
         self._stride_by_ep[ref.episode_index] = 2
         return {"state": state, "action": action, "time_ns": times}

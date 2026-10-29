@@ -1,4 +1,8 @@
-"""Configuration and dataset adapter loading for MCAP sources."""
+"""Configuration and adapter loading for whole-file MCAP filtering.
+
+Source paths remain lexical absolute paths. In particular, resolving source
+symlinks here would hide them from the deletion guard in the CLI.
+"""
 
 from __future__ import annotations
 
@@ -35,9 +39,16 @@ class McapSpec:
     gripper_gap: GripperGapConfig | None = None
 
 
-def _resolve(base: Path, value: str) -> Path:
+def _absolute(base: Path, value: str | Path) -> Path:
+    """Make a path absolute without dereferencing source symlinks."""
     path = Path(value).expanduser()
-    return (path if path.is_absolute() else base / path).resolve()
+    # Keep even a symlink followed by ``..`` visible. os.path.abspath would
+    # normalize that sequence before the deletion guard can inspect it.
+    return path if path.is_absolute() else base / path
+
+
+def _resolve(base: Path, value: str | Path) -> Path:
+    return _absolute(base, value).resolve()
 
 
 def load_spec(
@@ -50,14 +61,15 @@ def load_spec(
     path = Path(config_path).expanduser().resolve()
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     source = raw.get("source") or {}
-    if source.get("format") != "mcap" or (raw.get("output") or {}).get("format") != "mcap":
-        raise ValueError("v3 requires source.format=mcap and output.format=mcap")
+    output = raw.get("output") or {}
+    if source.get("format") != "mcap" or output.get("format") != "report":
+        raise ValueError("v4 requires source.format=mcap and output.format=report")
     base = path.parent
-    repo = Path(repo_root).expanduser().resolve() if repo_root else _resolve(base, raw["upstream_repo"])
-    package = Path(package_dir).expanduser().resolve() if package_dir else _resolve(base, raw["dataset_package"])
-    quality = Path(quality_yaml).expanduser().resolve() if quality_yaml else _resolve(base, raw["quality_yaml"])
-    root = Path(input_root).expanduser().resolve() if input_root else _resolve(base, source["root"])
-    out = Path(output_root).expanduser().resolve() if output_root else _resolve(base, raw["output"]["root"])
+    repo = _resolve(Path.cwd(), repo_root) if repo_root is not None else _resolve(base, raw["upstream_repo"])
+    package = _resolve(Path.cwd(), package_dir) if package_dir is not None else _resolve(base, raw["dataset_package"])
+    quality = _resolve(Path.cwd(), quality_yaml) if quality_yaml is not None else _resolve(base, raw["quality_yaml"])
+    root = _absolute(Path.cwd(), input_root) if input_root is not None else _absolute(base, source["root"])
+    out = _absolute(Path.cwd(), output_root) if output_root is not None else _absolute(base, output["root"])
     for required in (repo / "qwen-manip-preprocess" / "src", package / "adapter.py", quality):
         if not required.exists():
             raise FileNotFoundError(required)
@@ -95,12 +107,13 @@ def setup_imports(spec: McapSpec) -> None:
 
 
 def configure_source_environment(spec: McapSpec) -> None:
-    """Keep the ABC adapter's temporary files beneath this v3 output root."""
+    """Keep ABC source scratch and caches beneath the v4 report root."""
     if spec.package_dir.name == "abc_130k":
         scratch = spec.output_root / ".tmp"
         scratch.mkdir(parents=True, exist_ok=True)
         os.environ["ABC130K_PFS_TMP"] = str(scratch)
         os.environ["ABC130K_VIDEO_CACHE"] = str(spec.output_root / "cache" / "source_videos")
+        os.environ["ABC130K_SPLITS"] = ",".join(spec.splits)
 
 
 def _load_module(path: Path, name: str) -> Any:
@@ -116,34 +129,32 @@ def _load_module(path: Path, name: str) -> Any:
 def build_adapter(spec: McapSpec) -> Any:
     setup_imports(spec)
     configure_source_environment(spec)
-    mod = _load_module(spec.package_dir / "adapter.py", "stage_b_v3_source_adapter")
+    mod = _load_module(spec.package_dir / "adapter.py", "stage_b_v4_source_adapter")
     if not hasattr(mod, "build_adapter"):
         raise TypeError(f"{spec.package_dir} requires build_adapter(package_dir)")
     return mod.build_adapter(spec.package_dir)
 
 
 def discover(spec: McapSpec, *, limit: int | None = None) -> list[McapEpisodeRef]:
-    """Use the source package's own stable episode IDs, then attach MCAP paths."""
+    """Preserve source paths while using each profile's stable discovery order."""
     setup_imports(spec)
     configure_source_environment(spec)
-    # Some delivered datasets contain named MCAP files directly under episode
-    # directories rather than an ``episode.mcap`` plus Stage A sidecars.
     custom = spec.package_dir / "discover_mcaps.py"
     if custom.is_file():
-        mod = _load_module(custom, "stage_b_v3_source_discover_mcaps")
+        mod = _load_module(custom, "stage_b_v4_source_discover_mcaps")
         paths = list(mod.discover_mcaps(spec.input_root))
         result: list[McapEpisodeRef] = []
         for index, mcap in enumerate(paths[:limit] if limit is not None else paths):
-            mcap = Path(mcap).resolve()
+            mcap = _absolute(spec.input_root, mcap)
             rel = mcap.relative_to(spec.input_root)
             result.append(McapEpisodeRef(
-                index, spec.input_root, mcap, rel.parent.as_posix(), "", rel.parent.name,
+                index, spec.input_root, mcap, rel.as_posix(), "", rel.parent.name,
             ))
         return result
     path = spec.package_dir / "discover.py"
     if not path.is_file():
         raise FileNotFoundError(f"MCAP package needs discover.py: {path}")
-    mod = _load_module(path, "stage_b_v3_source_discover")
+    mod = _load_module(path, "stage_b_v4_source_discover")
     index_cache = spec.output_root / "cache" / "source_episode_index.json"
     index_cache.parent.mkdir(parents=True, exist_ok=True)
     refs = mod.discover(

@@ -1,26 +1,16 @@
-# First v3 source profile. Override roots on the command line when deployed.
+# ABC-130K requires the official eef_pose.parquet beside each episode.mcap.
+# Override the input root explicitly. Output contains reports and caches only.
 upstream_repo: ../../../../github/SLM_data_curation
 dataset_package: ../../../../github/SLM_data_curation/datasets/abc_130k
 quality_yaml: ../../../../github/SLM_data_curation/datasets/abc_130k/quality_stage_b.yaml
 workers: 2
 quality_overrides:
-  # Matches datasets/abc_130k/run_config_stage_b.yaml.
   stage2_fill_missing_action_eef: false
-
 source:
   format: mcap
-  root: /mnt/pfs/datasets/ABC-130k-EEF
+  root: /path/to/input-mcaps
   splits: [train]
   reference_topics: [/top-camera, /top-left-camera]
-  # Calibration and instructions describe the episode rather than one frame.
-  static_topics:
-    - /instruction
-    - /top-camera-info
-    - /top-left-camera-info
-    - /top-right-camera-info
-    - /left-wrist-camera-info
-    - /right-wrist-camera-info
-
 output:
-  format: mcap
-  root: /mnt/pfs/Data/ryk/stage_b_mcap_v3_abc130k
+  format: report
+  root: ../../stage_b_v4_outputs/abc_130k

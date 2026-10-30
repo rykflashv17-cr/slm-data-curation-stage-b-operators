@@ -1,12 +1,47 @@
-"""Typed data passed between the three v4 operators."""
+"""Typed data passed between the four v4 operators."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def _source_times(values, *, label: str) -> np.ndarray:
+    times = np.asarray(values)
+    if times.ndim != 1 or times.dtype.kind not in "iu":
+        raise ValueError(f"{label} must be a one-dimensional integer nanosecond array")
+    if np.any(times < 0) or np.any(times > np.iinfo(np.int64).max):
+        raise ValueError(f"{label} must fit nonnegative int64 source timestamps")
+    # Compare before subtracting: unsigned np.diff can hide a backward clock.
+    if np.any(times[1:] < times[:-1]):
+        raise ValueError(f"{label} must not go backward")
+    return times.astype(np.int64, copy=True)
+
+
+def quality_timeline(timeline: Mapping, num_frames: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Validate metadata produced alongside the adapter's final quality rows.
+
+    Missing topic metadata means an unsupported adapter contract; an explicit
+    empty integer array means the adapter found no valid measurements.
+    """
+    if not isinstance(timeline, Mapping) or "frame_times_ns" not in timeline:
+        raise ValueError("adapter quality timeline must provide frame_times_ns")
+    times = _source_times(timeline["frame_times_ns"], label="frame_times_ns")
+    if len(times) != num_frames:
+        raise ValueError("one source timestamp is required per final quality row")
+    observed = timeline.get("valid_measurement_times_ns", {})
+    if not isinstance(observed, Mapping):
+        raise ValueError("valid_measurement_times_ns must map topic names to timestamp arrays")
+    measurements = {}
+    for topic, values in observed.items():
+        if not isinstance(topic, str) or not topic:
+            raise ValueError("measurement topic names must be nonempty strings")
+        measurements[topic] = _source_times(values, label=f"valid_measurement_times_ns[{topic}]")
+    return times, measurements
 
 
 @dataclass(frozen=True)
@@ -33,32 +68,26 @@ class McapEpisodeRef:
 
 
 @dataclass(frozen=True)
-class QualityEpisode:
+class NormalizedEpisode:
     ref: McapEpisodeRef
     state: np.ndarray
     action: np.ndarray
     frame_times_ns: np.ndarray
-    startup_exclude: np.ndarray
-    stage1_exclude: np.ndarray
     source_identity: SourceIdentity | None = None
+    valid_measurement_times_ns: dict[str, np.ndarray] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         state, action = np.asarray(self.state, dtype=np.float64), np.asarray(self.action, dtype=np.float64)
         if state.ndim != 2 or action.ndim != 2 or state.shape[0] != action.shape[0]:
             raise ValueError("state/action must be aligned two-dimensional arrays")
-        times = np.asarray(self.frame_times_ns)
-        if times.shape != (len(state),) or times.dtype.kind not in "iu":
-            raise ValueError("one integer source timestamp is required per quality frame")
-        if len(times) and np.any(np.diff(times) < 0):
-            raise ValueError("source timestamps must not go backward")
-        for name in ("startup_exclude", "stage1_exclude"):
-            mask = np.asarray(getattr(self, name), dtype=bool)
-            if mask.shape != action.shape:
-                raise ValueError(f"{name} must match the action array")
-            object.__setattr__(self, name, mask)
+        times, measurements = quality_timeline({
+            "frame_times_ns": self.frame_times_ns,
+            "valid_measurement_times_ns": self.valid_measurement_times_ns,
+        }, len(state))
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "action", action)
-        object.__setattr__(self, "frame_times_ns", times.astype(np.int64, copy=False))
+        object.__setattr__(self, "frame_times_ns", times)
+        object.__setattr__(self, "valid_measurement_times_ns", measurements)
 
     @property
     def episode_index(self) -> int:
@@ -76,6 +105,55 @@ class StatisticsBundle:
     alignment_stats: Any
     alignment_lag: int
     cache_dir: Path
+
+
+# Import compatibility only; the normalized contract no longer contains
+# stage-specific masks. Construct those inside the quality operator.
+QualityEpisode = NormalizedEpisode
+
+
+@dataclass(frozen=True)
+class NormalizedRecord:
+    ref: McapEpisodeRef
+    data_path: Path | None
+    source_identity: SourceIdentity | None = None
+    input_error: str | None = None
+    deletion_blocked_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class NormalizedBatchRef:
+    manifest_path: Path
+    records: tuple[NormalizedRecord, ...]
+
+
+@dataclass(frozen=True)
+class StatisticsContext:
+    batch: NormalizedBatchRef
+    status: str  # ready, empty, failed
+    statistics: StatisticsBundle | None
+    fit_records: tuple[dict[str, Any], ...]
+    coverage_policy: tuple[str, str, int] | None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"ready", "empty", "failed"}:
+            raise ValueError("invalid statistics context status")
+        if (self.statistics is not None) != (self.status == "ready"):
+            raise ValueError("only a ready context may contain fitted statistics")
+
+
+@dataclass(frozen=True)
+class BatchQualityResult:
+    summary: dict[str, Any]
+    exit_code: int
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
+class BatchDeliveryResult:
+    summary: dict[str, Any]
+    exit_code: int
 
 
 def frame_ranges(mask: np.ndarray, times: np.ndarray) -> list[dict[str, int]]:
@@ -117,6 +195,7 @@ class QualityDecision:
     reasons: tuple[str, ...]
     stage_results: dict[str, dict[str, Any]]
     source_identity: SourceIdentity | None = None
+    diagnostic_errors: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         mask = np.asarray(self.bad_mask, dtype=bool)
@@ -135,10 +214,10 @@ class QualityDecision:
         for name, result in self.stage_results.items():
             for interval in result.get("detected_ranges", []):
                 detected.append({"stage": name, **interval})
-        return _plain({
+        record = {
             "episode_index": self.ref.episode_index,
             "source": str(self.ref.mcap_path),
-            "status": "rejected" if self.reject_file else "kept",
+            "status": "rejected" if self.reject_file else "error" if self.diagnostic_errors else "kept",
             "reject_file": bool(self.reject_file),
             "reasons": list(self.reasons),
             "num_frames": self.num_frames,
@@ -149,4 +228,9 @@ class QualityDecision:
             ) if self.reject_file else [],
             "stage_results": self.stage_results,
             "source_identity": asdict(self.source_identity) if self.source_identity else None,
-        })
+            "diagnostic_errors": self.diagnostic_errors,
+        }
+        if self.diagnostic_errors:
+            record.update({"error": "; ".join(f"{name}: {error}" for name, error in self.diagnostic_errors.items()),
+                           "retained_due_to_error": True})
+        return _plain(record)

@@ -1,0 +1,21 @@
+{
+  "exit_code": 1,
+  "deleted_files": 1,
+  "audit_error": "DeletionExecutionError: source directory sync failed after unlink; deletion stopped",
+  "delivery_status": "complete",
+  "source_exists": [
+    false,
+    true
+  ],
+  "results": [
+    {
+      "episode_index": 0,
+      "source": "/tmp/stage-b-audit-fsync-84bqs428/sources/first.mcap",
+      "status": "deleted",
+      "deleted_bytes": 570,
+      "source_directory_synced": false,
+      "source_directory_sync_error": "OSError: synthetic source-directory fsync EIO"
+    }
+  ],
+  "source_fsync_failures": 1
+}

@@ -11,6 +11,8 @@ from mcap.writer import Writer
 from stage_b_mcap_v4.contracts import McapEpisodeRef
 from stage_b_mcap_v4.operators import GlobalStatsOperator, McapReadOperator, QualityDetectionOperator
 from stage_b_mcap_v4.spec import build_adapter, load_spec, quality_config
+from stage_b_mcap_v4.storage import load_episode
+from stage_b_mcap_v4.delivery import McapDeliveryOperator
 
 
 def _proto_types():
@@ -73,22 +75,27 @@ def test_abc_32d_adapter_stats_and_whole_rejection_preserve_sidecar(
     }), sidecar)
     original_sidecar = sidecar.read_bytes()
     config = Path(__file__).resolve().parents[1] / "configs" / "abc_130k.yaml"
-    spec = load_spec(config, input_root=root, output_root=tmp_path / "reports", repo_root=upstream_repo)
+    spec = load_spec(
+        config, input_root=root, output_root=tmp_path / "reports", repo_root=upstream_repo,
+        package_dir=upstream_repo / "datasets" / "abc_130k",
+        quality_yaml=upstream_repo / "datasets" / "abc_130k" / "quality_stage_b.yaml",
+    )
     cfg = quality_config(spec)
     ref = McapEpisodeRef(0, root, source, "data/train/pick/episode_000", "train", "pick")
-    episode = McapReadOperator().run(ref, spec, cfg, build_adapter(spec))
+    batch = McapReadOperator().run_batch([ref], spec, cfg, build_adapter(spec))
+    episode = load_episode(batch.records[0])
     assert episode.state.shape == episode.action.shape == (20, 32)
     np.testing.assert_array_equal(episode.frame_times_ns, times)
-    statistics = GlobalStatsOperator().run(spec, cfg, [ref], recompute=True)
+    context = GlobalStatsOperator().run(batch, spec, cfg, recompute=True)
+    assert context.status == "ready", context.error
+    statistics = context.statistics
     detector = QualityDetectionOperator()
     decision = detector.run(episode, spec, cfg, statistics)
     assert decision.reject_file  # ABC Stage3 requires at least 120 frames.
     record = decision.to_record()
     assert record["effective_removed_ranges"][0]["end_frame_exclusive"] == 20
-    record.update({"deletion_eligible": True, "deletion_blocked_reason": None})
-    result = detector.delete_rejected(
-        [record], input_root=root, events_path=spec.output_root / "events.jsonl",
-    )
-    assert result[0]["status"] == "deleted"
+    judged = detector.run_batch(context, spec, cfg)
+    result = McapDeliveryOperator().run(judged, mode="run")
+    assert result.summary["deleted_files"] == 1
     assert not source.exists()
     assert sidecar.read_bytes() == original_sidecar

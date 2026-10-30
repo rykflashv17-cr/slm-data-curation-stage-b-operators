@@ -1,0 +1,190 @@
+{
+  "generated_at_utc": "2026-10-29T17:44:14.770391+00:00",
+  "base_revision": "8a2760d454afd4d6db575ea879b73150a0976939",
+  "branch": "codex/v4-review-fixes",
+  "uncommitted_changes": true,
+  "tests": {
+    "passed": 137,
+    "skipped": 15,
+    "failed": 0,
+    "seconds": 8.52,
+    "existing_regressions_passed": 77,
+    "new_regressions_passed": {
+      "mcap_integrity": 36,
+      "quality_diagnostics": 13,
+      "deletion_recovery": 11
+    },
+    "command": "PYTHONPATH=<local-test-dependencies> python3 -m pytest -q -s -rs -p no:cacheprovider tests",
+    "skip_reason": "SLM_UPSTREAM_REPO unavailable; real engine and ABC integration unverified"
+  },
+  "environment": {
+    "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "dependencies": {
+      "mcap": "1.3.1",
+      "numpy": "2.2.6",
+      "pytest": "9.1.1",
+      "zstandard": "0.25.0",
+      "lz4": "4.4.5",
+      "PyYAML": "6.0.3"
+    }
+  },
+  "independent_validation": {
+    "legal_mcap_variants_passed": 768,
+    "quality_fault_cases_passed": 6,
+    "included_in_137_pytest_count": false
+  },
+  "serial_traces": [
+    {
+      "mode": "quality",
+      "events": [
+        "B01.start",
+        "B01.end",
+        "B02.start",
+        "B02.end",
+        "B03.start",
+        "B03.end",
+        "B04.start",
+        "B04.end"
+      ],
+      "container_validations": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_decodes": [
+        0,
+        1,
+        2
+      ],
+      "fit_ids": [
+        0,
+        2
+      ],
+      "statuses": [
+        "kept",
+        "rejected",
+        "kept",
+        "error"
+      ]
+    },
+    {
+      "mode": "run",
+      "events": [
+        "B01.start",
+        "B01.end",
+        "B02.start",
+        "B02.end",
+        "B03.start",
+        "B03.end",
+        "B04.start",
+        "B04.end"
+      ],
+      "container_validations": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_decodes": [
+        0,
+        1,
+        2
+      ],
+      "fit_ids": [
+        0,
+        2
+      ],
+      "statuses": [
+        "kept",
+        "rejected",
+        "kept",
+        "error"
+      ]
+    }
+  ],
+  "assertions": {
+    "python_ast_parses": 26,
+    "yaml_files_parse": true,
+    "exactly_four_registered_operators_with_callable_methods": true,
+    "git_diff_check": true,
+    "patch_applies_to_base": true,
+    "applied_patch_byte_matches_all_source_files": true,
+    "crc_corruption_and_finite_payload_modification_fail_before_adapter_decode": true,
+    "all_topics_and_unindexed_chunks_scanned": true,
+    "optional_absent_crcs_allowed": true,
+    "directory_sync_failure_stops_remaining_deletions": true,
+    "close_failure_preserves_completed_deletions": true,
+    "diagnostic_failure_preserves_prior_rejection_and_evidence": true,
+    "diagnostic_failure_blocks_deletion_at_b03_and_b04": true,
+    "quality_v1_handoff_read_compatibility": true,
+    "no_quality_threshold_changes": true,
+    "tests_only_synthetic_or_temporary_files": true,
+    "old_archives_preserved": true,
+    "real_business_data_modified": false,
+    "real_engine_numerical_correctness_verified": false,
+    "real_engine_multiprocessing_verified": false,
+    "cross_process_platform_deployed": false,
+    "s1_s4_quality_fail_fast_implemented": false,
+    "pushed_to_remote": false
+  },
+  "source_sha256": {
+    ".gitignore": "21efc7135daa7020189cb5ebf83b86aaff88953fd3e1e3fff96952c9899b03bd",
+    "README.md": "3def3835e3098e09607be495ee4c244a235422ffce526721b4d5f0517f5c8a98",
+    "configs/abc_130k.yaml": "f7ae3b3275516ee32fd99534c32073026ddfcd57bd9f8fabcfa61038f1ec8d9f",
+    "configs/jindian_marvin.yaml": "e4305e704fee97806a2d831430e841e985dd81a567fbd02fbb7b3f0c084d6072",
+    "dataset_adapters/jindian_marvin/adapter.py": "f7297e5497cd074a56e2902d8b4efadc221ccb12b05b7afe1262097c57727f36",
+    "dataset_adapters/jindian_marvin/discover_mcaps.py": "be83cfd025eccb7a6d08fb28fde1b001a694de34b9ce80fb5e5d16b99e2d4dbc",
+    "dataset_adapters/jindian_marvin/quality_stage_b.yaml": "ea1834e72863e8e2a16d3e509906c606c7643c859780af7318682350c19c7bf5",
+    "docs/DELIVERY_HANDOFF.md": "932d2b22600a96032fbd352edb9055cf6461909b7ae057295a092a1707cfc9cd",
+    "docs/OPERATOR_IO.md": "3aa41b36c3fe1cba4debd70f1f2a869f1854f57935db5fe0398a8d2a95ba3eca",
+    "docs/P0_FIX_HANDOFF.md": "3d7f742ec7f7d934f275bbadddb4c0b6576ffe76a4b100a3c6bbfdeb33ec6ee0",
+    "docs/REVIEW_FIX_HANDOFF.md": "87f48ca0bba9d17e6f66b5c31236437eefaac8123f83cf580373a1890266553a",
+    "docs/STRICT_SERIAL_HANDOFF.md": "67acaa5297ecb407d13acbbe0c9b0f82cda8da7ac0be7c52b3c88e10a38ccce0",
+    "docs/VALIDATION.md": "a86258910010275873d3f919df282241e3801507261019a51093a53470341a49",
+    "operators.yaml": "a7a95e519de96945bc84c045c78fe60cc4bd028eac7d8082a3a822f82df220ab",
+    "pyproject.toml": "f18c55f8a0acd312efed9b12eac527858cb335eaeaeb5f9f761a1a9f5ca167eb",
+    "run.py": "adeafbe3fe2a90b7790bb913a220098faa7df8bf656a27cfe65c4ff882ca5b3d",
+    "stage_b_mcap_v4/__init__.py": "631870f6984163a1a08961b07fd4cfff0eb23796576a48e922be69cf52bab639",
+    "stage_b_mcap_v4/cli.py": "585703b0b04ee09cd4bde0680048e72472a31a2b30c42094d13994d5d36a6600",
+    "stage_b_mcap_v4/contracts.py": "8941efc143660c7eb7d15a2b7814028a9cedaaaab953eeada5c7637b3bed0d66",
+    "stage_b_mcap_v4/deletion.py": "bedeb24702ae93658d0fad915ec2bc082a3ec3ffcd6168f06a47d11e220ab461",
+    "stage_b_mcap_v4/delivery.py": "f0ba0a96b2e31399fa22e1f89ca8d86d434d5a8eea87c843b0c3e349a3f9022f",
+    "stage_b_mcap_v4/integrity.py": "ff9e3738473fec4231eec4d39ab1b00ac44c8d957d57fe9244fc2c8bbc660e3a",
+    "stage_b_mcap_v4/measurement.py": "75e63c57bd38359333eaa0c24373c12f82fdf76ca8aa090aba45a54e7a5d9371",
+    "stage_b_mcap_v4/operators.py": "7a2da16fb8d16d7559547aad30a06b0b46d7ed5f75300bc19bd7b28f8dc47851",
+    "stage_b_mcap_v4/reporting.py": "38620e0db275ff1584e31dec4d655d81294ba7c617ec8ec6d757971334f1c991",
+    "stage_b_mcap_v4/spec.py": "5283b012b9a9a8cf80c44f2d0cf08e35f50d51c0ae0d7b2da8a5cfc7a9c2e109",
+    "stage_b_mcap_v4/storage.py": "1b7be8df93085ac7cbe7c602e8efbbbf49da16526b3cd21d0bffd3597337aa55",
+    "tests/conftest.py": "30f57f26c3e95e390c7d5d4b1566d4dc63d8f5a434dd037c69a0980e1eae7c51",
+    "tests/test_abc_integration.py": "2f8bd9d0bcc551254ff3b5e7cf2e9db3fadbe92639daa72ddf2da23a09c9327f",
+    "tests/test_cli.py": "24d81d0a7ac36277850e068b0780d8efd2946b72a2590614a5e35640b312c335",
+    "tests/test_deletion.py": "3a9426935ea5f6b3a41605f37203c5977b6c1452a930c0760ca099a20fe2a2a8",
+    "tests/test_deletion_recovery.py": "fcefa6f93c6c57b1ca30ff1906dc9fa7b14266410ce264086badf1164fd73dde",
+    "tests/test_delivery.py": "d11aa3e323f7816d1f5ed357c76acf64f13810647e836f4ca5618c4e53c9f6de",
+    "tests/test_mcap_integration.py": "5a1173117e0c599c7b483e5bc780638ba61406c5adf10f16f8ea36114dd9e59c",
+    "tests/test_mcap_integrity.py": "652f2306f6ba8e5a4a599a707fd4fe88378d5b61aee45f4b63acd13b21e92e61",
+    "tests/test_p0_input_contract.py": "e9e9a1a207e0f8783a1741f6bf67856ac6dd7e0356c72f3bb8f36973e2393e4c",
+    "tests/test_quality_diagnostics.py": "bcb3a015c6d5374b1300878a371422b7240a5e71c942f9066c673f89676b87ad",
+    "tests/test_quality_policy.py": "674a2230ae7814307589c138281ad13fee94c05ecbe305b5c0cfabc5d4444086",
+    "tests/test_serial_pipeline.py": "605a60b20f41518c4f39a36bee1356d7cadbfae4000351d46e2170c278c4b73c"
+  },
+  "patch_sha256": "ae5580ba3c0dcc32b10730015b369f4433e40d3bb5e94c6089b6069ce25c09de",
+  "evidence_sha256": {
+    "tests.txt": "be797ba302c61d5d464a766c242d3c122233adf0eddd694427a0aeb29ca6c92a",
+    "integrity-tests.txt": "fc08cc1c76ab2438bc2f34303ebd6d41eaf7ef5b00914c39731446952de46968",
+    "directory_sync_after.json": "0084d37eb9af7cba525a21241b2e414a0ab95ca4734eaefabe43b3e9ece5fda1",
+    "audit_close_after.json": "98617fdfee7bae66b72f0d294beab45282786e7301578cfb32286af7fefcada7",
+    "deletion_summary_recheck.json": "4395ba7087fe10d986e8f5422e17e32f72efb3b643ddcbf0bbef6ca8121bccbd",
+    "independent_review.json": "ffc73733c1964f2556bd5028d33d9d4576861dff00e8b8bef0a69db46b4e47d7",
+    "independent_mcap_matrix.py": "1585aa925a41c10d49bd27a3a721e06874d8e5d2f43c62f11a4b00edf4cc9c28",
+    "test_independent_quality.py": "cc3a60fe61024dc5b6a6e8d66f72f9c86e6ad1fc3812d63f90cc23f09f9951ee",
+    "independent-matrix.txt": "c9e0d6d496860264b97ef483f49ce8cd6f6c15ed262323cbe4fdaf315f429658",
+    "independent-quality.txt": "3203da9a6568ec5379469a9996e349706c94be424dac52aab20f1a055bba846a"
+  },
+  "preserved_prior_archives_sha256": {
+    "analysis/v4-strict-serial/stage-b-v4-strict-serial.zip": "59482bc5a4105915d46fa9033b7eef564c282db263c0a157cb4403be2115cf99",
+    "analysis/v4-result-delivery/stage-b-v4-four-operators.zip": "7a8f77c18ee180418e6bc95c35987603edf6ff8ebc9cab0c85bdb824cee610b1"
+  }
+}

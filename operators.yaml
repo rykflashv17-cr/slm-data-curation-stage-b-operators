@@ -1,42 +1,71 @@
 version: 4
+interface_revision: four_stage_review_fix_v2
 source_revision: 0e694dbc9706b2a5bac8e550f8cd9de18f5b7473
+operator_baseline_revision: 8a2760d454afd4d6db575ea879b73150a0976939
 source_format: mcap
-output_format: report_and_in_place_source_filter
+output_format: accepted_mcap_copies_and_audited_source_filter
 quality_policy: reject_whole_mcap_on_any_bad_frame_or_stage_discard
 dataset_profiles:
   - configs/jindian_marvin.yaml
   - configs/abc_130k.yaml
 operators:
   - id: mcap_read
-    name: MCAP读取
+    name: 格式统一（MCAP读取与对齐）
     class: stage_b_mcap_v4.operators.McapReadOperator
-    input: McapEpisodeRef + McapSpec + quality config + dataset adapter
-    output: QualityEpisode[state, action, frame_times_ns, startup_exclude, stage1_exclude, ref, source_identity]
+    method: run_batch
+    input: list[McapEpisodeRef] + McapSpec + schema config + optional dataset adapter
+    output: NormalizedBatchRef[manifest_path, all NormalizedRecord entries]
+    normalized_data: [state, action, frame_times_ns, valid_measurement_times_ns]
+    input_validation: full_mcap_structure_and_available_crcs_before_adapter_decode
+    adapter_contract: to_quality_timeline(standard) provides timestamps for final rows and valid decoded measurements
   - id: global_stats
     name: 全局统计
     class: stage_b_mcap_v4.operators.GlobalStatsOperator
-    input: readable and coverage-valid batch list[McapEpisodeRef] + McapSpec + quality config
-    output: StatisticsBundle[Stage1 thresholds, Stage3 quantiles, alignment lag]
+    method: run
+    input: NormalizedBatchRef + McapSpec + quality config
+    output: StatisticsContext[complete batch, status, statistics, fit_records, coverage_policy, error]
+    reads: normalized_arrays_only
+    statuses: [ready, empty, failed]
   - id: quality_detection
-    name: 质量检测
+    name: 质检判断
     class: stage_b_mcap_v4.operators.QualityDetectionOperator
-    input: QualityEpisode + McapSpec + quality config + StatisticsBundle
-    output: whole-file quality decision + stage reasons + metrics + audit bad-frame ranges
-    includes: [gripper_gap, stage1, stage2, stage3, stage4]
-    methods:
-      evaluate: run
-      evaluate_coverage_before_statistics: precheck
-      apply_recorded_rejections: delete_rejected
+    method: run_batch
+    input: StatisticsContext + McapSpec + quality config
+    output: BatchQualityResult[summary, exit_code, manifest_path] and durable per-file decisions
+    includes: [gripper_gap, startup_masks, stage1, stage2, stage3, stage4, reporting]
+    handoff_format: quality_batch_v2_with_v1_read_compatibility
+    diagnostic_failure: preserve_completed_verdicts_and_evidence_stop_remaining_stages_retain_source
+  - id: mcap_delivery
+    name: 结果交付（合格MCAP输出与拒绝处置）
+    class: stage_b_mcap_v4.delivery.McapDeliveryOperator
+    method: run
+    input: BatchQualityResult + mode
+    output: BatchDeliveryResult and accepted_mcaps and delivery_manifest
+    includes: [verify_saved_verdicts, copy_passed_sources, delivery_audit, optional_rejected_source_deletion]
+    rerun_quality: false
 execution:
-  stats: calculate_statistics_only
-  quality_preflight: read_sources_then_quality_detection_gripper_precheck_before_statistics
-  statistics_population_in_quality_or_run: selected_sources_that_are_readable_and_pass_gripper_precheck
-  all_sources_rejected_by_gripper_gap: no_statistics_required
+  full_pipeline: [mcap_read, global_stats, quality_detection, mcap_delivery]
+  stage_barriers: entire_batch_completes_before_next_stage
+  stats: mcap_read_then_global_stats_debug_prefix
+  source_decoding: mcap_read_only_once_per_selected_source
+  integrity_scan: mcap_read_additional_full_file_read_and_chunk_decompression
+  statistics_admission: readable_normalized_arrays_with_finite_values_and_required_measurement_coverage
+  retain_all_records_between_stages: true
+  no_statistics_candidates: global_stats_returns_empty_then_quality_detection_runs
   required_statistics_failure: retain_entire_batch_without_deletion
   numeric_stage_scope: full_original_episode_without_prefix_truncation
-  quality: write_decisions_without_deleting_sources
-  run: write_all_batch_decisions_before_deleting_rejected_source_mcaps
+  quality_timeline_source: explicit_adapter_metadata_no_message_count_or_stride_inference
+  gripper_coverage_source: normalized_valid_measurement_times_no_source_reopen
+  quality: complete_four_stages_copy_passed_mcaps_and_retain_all_sources
+  run: complete_four_stages_publish_passed_mcaps_and_audits_before_deleting_rejected_sources
+  fresh_output_directory_required: true
   retain_input_errors: true
   disallow_symlink_deletion: true
   reencode_video: false
-  export_new_mcap: false
+  export_new_mcap: true
+  rewrite_mcap_contents: false
+  accepted_relative_paths: preserve
+  copy_failure: do_not_publish_partial_batch_and_block_all_deletions
+  quality_stage_short_circuit: gripper_gap_or_execution_error_otherwise_collect_full_diagnostics
+  deletion_sync_or_audit_failure: stop_remaining_deletions_preserve_actual_outcomes_return_failure
+  deletion_uncertain_outcome: report_unknown_and_return_failure

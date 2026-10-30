@@ -1,7 +1,7 @@
 """Configuration and adapter loading for whole-file MCAP filtering.
 
 Source paths remain lexical absolute paths. In particular, resolving source
-symlinks here would hide them from the deletion guard in the CLI.
+symlinks here would hide them from the source-access guard in B04.
 """
 
 from __future__ import annotations

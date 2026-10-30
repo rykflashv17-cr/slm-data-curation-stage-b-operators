@@ -14,6 +14,7 @@ from stage_b_mcap_v4.cli import main
 from stage_b_mcap_v4.contracts import McapEpisodeRef
 from stage_b_mcap_v4.operators import GlobalStatsOperator, McapReadOperator, QualityDetectionOperator
 from stage_b_mcap_v4.spec import build_adapter, load_spec, quality_config
+from stage_b_mcap_v4.storage import load_episode
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -96,7 +97,8 @@ def test_real_read_statistics_and_four_quality_stages_keep_clean_source(
     spec = _spec(input_root, tmp_path / "reports", upstream_repo)
     cfg = quality_config(spec)
     ref = McapEpisodeRef(0, input_root, source, ".")
-    episode = McapReadOperator().run(ref, spec, cfg, build_adapter(spec))
+    batch = McapReadOperator().run_batch([ref], spec, cfg, build_adapter(spec))
+    episode = load_episode(batch.records[0])
     assert episode.state.shape == (160, 16)
     assert episode.action.shape == (160, 16)
     np.testing.assert_array_equal(episode.state, episode.action)
@@ -104,7 +106,9 @@ def test_real_read_statistics_and_four_quality_stages_keep_clean_source(
         episode.frame_times_ns, np.arange(160, dtype=np.int64) * 40_000_000 + 1_000_000_000,
     )
     assert episode.source_identity is not None
-    statistics = GlobalStatsOperator().run(spec, cfg, [ref], recompute=True)
+    context = GlobalStatsOperator().run(batch, spec, cfg, recompute=True)
+    assert context.status == "ready", context.error
+    statistics = context.statistics
     assert statistics.global_stats.num_frames == 160
     decision = QualityDetectionOperator().run(episode, spec, cfg, statistics)
     assert not decision.reject_file, decision.to_record()
@@ -138,7 +142,8 @@ def test_actual_batch_run_deletes_gap_files_keeps_complete_clean_file(
     assert summary["kept_files"] == 1
     assert summary["deleted_files"] == 2
     assert summary["failed_episodes"] == 0
-    assert not list(output.rglob("*.mcap"))
+    assert (output / "accepted" / "clean.mcap").read_bytes() == original
+    assert summary["exported_files"] == 1
 
 
 def test_entirely_missing_gripper_remains_nan_and_requires_diagnosed_gap(
@@ -167,7 +172,7 @@ def test_entirely_missing_gripper_remains_nan_and_requires_diagnosed_gap(
     assert source.read_bytes() == original
 
 
-def test_all_gap_rejected_batch_needs_no_global_statistics(
+def test_all_gap_batch_completes_b02_without_numerical_fit(
     tmp_path: Path, upstream_repo: Path, monkeypatch,
 ) -> None:
     root, output = tmp_path / "sources", tmp_path / "reports"
@@ -180,7 +185,7 @@ def test_all_gap_rejected_batch_needs_no_global_statistics(
         stats_calls.append(True)
         raise AssertionError("gap-only rejection must not fit global statistics")
 
-    monkeypatch.setattr(GlobalStatsOperator, "run", forbidden_statistics)
+    monkeypatch.setattr(GlobalStatsOperator, "_fit", forbidden_statistics)
     assert main([
         "run", "--config", str(CONFIG), "--repo-root", str(upstream_repo),
         "--input-root", str(root), "--output-root", str(output),

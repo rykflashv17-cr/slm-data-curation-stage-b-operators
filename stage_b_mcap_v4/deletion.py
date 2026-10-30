@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,31 @@ class UnsafeSourceError(ValueError):
 
 class AuditWriteError(OSError):
     """Deletion must stop because a durable audit event could not be written."""
+
+
+class DeletionExecutionError(OSError):
+    """A deletion attempt or its durability is uncertain; stop the batch."""
+
+
+def _add_cleanup_error(primary: BaseException, secondary: BaseException, operation: str) -> None:
+    errors = list(getattr(primary, "cleanup_errors", []))
+    errors.append(f"{operation}: {type(secondary).__name__}: {secondary}")
+    primary.cleanup_errors = errors
+
+
+@contextmanager
+def _close_preserving_failure(close, operation: str):
+    """Never replace an earlier failure with a later close failure."""
+    try:
+        yield
+    except BaseException as primary:
+        try:
+            close()
+        except BaseException as secondary:
+            _add_cleanup_error(primary, secondary, operation)
+        raise
+    else:
+        close()
 
 
 def _absolute(path: Path) -> Path:
@@ -97,8 +123,11 @@ class _EventLog:
         try:
             os.fsync(self.fd)
             fsync_directory(path.parent)
-        except BaseException:
-            os.close(self.fd)
+        except BaseException as primary:
+            try:
+                os.close(self.fd)
+            except BaseException as secondary:
+                _add_cleanup_error(primary, secondary, "audit close during initialization")
             raise
 
     def append(self, payload: dict[str, Any]) -> None:
@@ -128,60 +157,87 @@ def delete_rejected(
     This helper writes a durable intent before each unlink and a result after it.
     Existing audit logs are refused rather than overwritten or resumed implicitly.
     """
-    log = _EventLog(events_path)
     results: list[dict[str, Any]] = []
     try:
-        for record in plan_records:
-            if record.get("status") != "rejected":
-                continue
-            source = Path(record["source"])
-            base = {"episode_index": record.get("episode_index"), "source": str(source)}
-            expected = record.get("source_identity")
-            if not record.get("deletion_eligible", False) or not expected:
-                result = {**base, "status": "skipped", "reason": record.get("deletion_blocked_reason") or "source identity unavailable"}
-                log.append({"event": "deletion_skipped", **result})
-                results.append(result)
-                continue
-            parent_fd = None
-            try:
-                parent_fd, name = _open_parent(source, input_root)
-                st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-                if not stat.S_ISREG(st.st_mode):
-                    raise UnsafeSourceError("source changed to a symlink or non-regular file")
-                actual = _identity(st)
-                if actual != expected:
-                    raise UnsafeSourceError("source identity changed since quality read")
-                log.append({"event": "delete_intent", **base, "source_identity": actual})
-                # Recheck after the audit write, immediately before unlinking.
-                latest = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-                if not stat.S_ISREG(latest.st_mode) or _identity(latest) != expected:
-                    raise UnsafeSourceError("source changed immediately before deletion")
-                os.unlink(name, dir_fd=parent_fd)
-                sync_error = None
+        log = _EventLog(events_path)
+        with _close_preserving_failure(log.close, "audit log close"):
+            for record in plan_records:
+                if record.get("status") != "rejected":
+                    continue
+                source = Path(record["source"])
+                base = {"episode_index": record.get("episode_index"), "source": str(source)}
+                expected = record.get("source_identity")
+                if not record.get("deletion_eligible", False) or not expected:
+                    result = {**base, "status": "skipped", "reason": record.get("deletion_blocked_reason") or "source identity unavailable"}
+                    results.append(result)
+                    log.append({"event": "deletion_skipped", **result})
+                    continue
                 try:
-                    os.fsync(parent_fd)
-                except OSError as exc:
-                    sync_error = f"{type(exc).__name__}: {exc}"
-                result = {**base, "status": "deleted", "deleted_bytes": actual["st_size"]}
-                if sync_error:
-                    result["source_directory_sync_error"] = sync_error
-                results.append(result)
-                log.append({"event": "delete_complete", **result})
-            except AuditWriteError:
-                raise
-            except (OSError, UnsafeSourceError) as exc:
-                result = {**base, "status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
-                log.append({"event": "deletion_skipped", **result})
-                results.append(result)
-            finally:
-                if parent_fd is not None:
-                    os.close(parent_fd)
-        log.append({"event": "deletion_batch_complete", "deleted": sum(x["status"] == "deleted" for x in results), "skipped": sum(x["status"] == "skipped" for x in results)})
-    except AuditWriteError as exc:
-        # An unlink may have succeeded just before a failed result-event fsync.
-        # Preserve known outcomes for the caller's separate summary file.
-        exc.completed_results = list(results)
+                    parent_fd, name = _open_parent(source, input_root)
+                except (OSError, UnsafeSourceError) as exc:
+                    result = {**base, "status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
+                    results.append(result)
+                    log.append({"event": "deletion_skipped", **result})
+                    continue
+                with _close_preserving_failure(lambda: os.close(parent_fd), "source directory close"):
+                    try:
+                        st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                        if not stat.S_ISREG(st.st_mode):
+                            raise UnsafeSourceError("source changed to a symlink or non-regular file")
+                        actual = _identity(st)
+                        if actual != expected:
+                            raise UnsafeSourceError("source identity changed since quality read")
+                    except (OSError, UnsafeSourceError) as exc:
+                        result = {**base, "status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
+                        results.append(result)
+                        log.append({"event": "deletion_skipped", **result})
+                        continue
+                    log.append({"event": "delete_intent", **base, "source_identity": actual})
+                    try:
+                        # Recheck after durable intent, immediately before unlink.
+                        latest = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                        if not stat.S_ISREG(latest.st_mode) or _identity(latest) != expected:
+                            raise UnsafeSourceError("source changed immediately before deletion")
+                    except (OSError, UnsafeSourceError) as exc:
+                        result = {**base, "status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
+                        results.append(result)
+                        log.append({"event": "deletion_skipped", **result})
+                        continue
+                    try:
+                        os.unlink(name, dir_fd=parent_fd)
+                    except OSError as exc:
+                        # A filesystem may report failure after applying an
+                        # operation. Do not claim an attempted unlink was skipped.
+                        result = {**base, "status": "unknown", "deletion_attempted": True,
+                                  "error": f"{type(exc).__name__}: {exc}"}
+                        results.append(result)
+                        failure = DeletionExecutionError("source unlink failed; outcome unknown; deletion stopped")
+                        try:
+                            log.append({"event": "deletion_outcome_unknown", **result})
+                        except BaseException as secondary:
+                            _add_cleanup_error(failure, secondary, "record uncertain unlink")
+                        raise failure from exc
+                    # Record the successful syscall before any operation that
+                    # can fail. Later errors must not erase this deletion.
+                    result = {**base, "status": "deleted", "deleted_bytes": actual["st_size"],
+                              "source_directory_synced": False}
+                    results.append(result)
+                    try:
+                        os.fsync(parent_fd)
+                    except OSError as exc:
+                        result["source_directory_sync_error"] = f"{type(exc).__name__}: {exc}"
+                        failure = DeletionExecutionError("source directory sync failed after unlink; deletion stopped")
+                        try:
+                            log.append({"event": "delete_durability_failed", **result})
+                        except BaseException as secondary:
+                            _add_cleanup_error(failure, secondary, "record directory sync failure")
+                        raise failure from exc
+                    result["source_directory_synced"] = True
+                    log.append({"event": "delete_complete", **result})
+            log.append({"event": "deletion_batch_complete", "deleted": sum(x["status"] == "deleted" for x in results), "skipped": sum(x["status"] == "skipped" for x in results)})
+    except BaseException as exc:
+        # Includes audit writes, source-directory cleanup, audit-log close and
+        # interruptions. Retain known outcomes on every exceptional exit.
+        exc.completed_results = [dict(result) for result in results]
         raise
-    finally:
-        log.close()
     return results

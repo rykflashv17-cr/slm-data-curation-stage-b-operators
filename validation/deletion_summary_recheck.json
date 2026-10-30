@@ -1,0 +1,66 @@
+{
+  "directory_sync": {
+    "exit_code": 1,
+    "execution_status": "failed",
+    "delivery_status": "complete",
+    "deleted_files": 1,
+    "deletion_sync_failed_files": 1,
+    "deletion_unknown_files": 0,
+    "deletion_cleanup_errors": [],
+    "audit_error": "DeletionExecutionError: source directory sync failed after unlink; deletion stopped"
+  },
+  "audit_close": {
+    "exit_code": 1,
+    "execution_status": "failed",
+    "delivery_status": "complete",
+    "deleted_files": 2,
+    "deletion_sync_failed_files": 0,
+    "deletion_unknown_files": 0,
+    "deletion_cleanup_errors": [],
+    "audit_error": "OSError: synthetic audit-close EIO"
+  },
+  "normal": {
+    "exit_code": 0,
+    "execution_status": "complete",
+    "delivery_status": "complete",
+    "deleted_files": 2,
+    "deletion_sync_failed_files": 0,
+    "deletion_unknown_files": 0,
+    "deletion_cleanup_errors": [],
+    "audit_error": null,
+    "source_exists": [
+      false,
+      false
+    ]
+  },
+  "unlink_unknown": {
+    "exit_code": 1,
+    "execution_status": "failed",
+    "delivery_status": "complete",
+    "deleted_files": 0,
+    "deletion_sync_failed_files": 0,
+    "deletion_unknown_files": 1,
+    "deletion_cleanup_errors": [],
+    "audit_error": "DeletionExecutionError: source unlink failed; outcome unknown; deletion stopped",
+    "source_exists": [
+      false,
+      true
+    ]
+  },
+  "primary_and_cleanup_error": {
+    "exit_code": 1,
+    "execution_status": "failed",
+    "delivery_status": "complete",
+    "deleted_files": 1,
+    "deletion_sync_failed_files": 0,
+    "deletion_unknown_files": 0,
+    "deletion_cleanup_errors": [
+      "audit log close: OSError: secondary audit-close failure"
+    ],
+    "audit_error": "AuditWriteError: primary audit-write failure",
+    "source_exists": [
+      false,
+      true
+    ]
+  }
+}

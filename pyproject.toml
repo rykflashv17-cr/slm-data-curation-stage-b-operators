@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stage-b-mcap-operators-v4"
 version = "0.1.0"
-description = "Three Stage B operators for whole-MCAP quality filtering"
+description = "Four Stage B operators for whole-MCAP quality filtering and delivery"
 requires-python = ">=3.10"
 dependencies = [
   "mcap",

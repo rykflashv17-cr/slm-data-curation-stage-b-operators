@@ -1,5 +1,5 @@
 # ABC-130K requires the official eef_pose.parquet beside each episode.mcap.
-# Override the input root explicitly. Output contains reports and caches only.
+# Override the input root explicitly. Output contains accepted MCAP copies, normalized intermediates, reports and caches.
 upstream_repo: ../../../../github/SLM_data_curation
 dataset_package: ../../../../github/SLM_data_curation/datasets/abc_130k
 quality_yaml: ../../../../github/SLM_data_curation/datasets/abc_130k/quality_stage_b.yaml

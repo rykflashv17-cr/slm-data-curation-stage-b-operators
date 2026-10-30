@@ -1,0 +1,24 @@
+{
+  "expected": 768,
+  "passed": 768,
+  "failed": 0,
+  "boolean_flags": [
+    "repeat_channels",
+    "repeat_schemas",
+    "use_chunking",
+    "use_statistics",
+    "use_summary_offsets",
+    "enable_crcs",
+    "enable_data_crcs"
+  ],
+  "compression": [
+    "NONE",
+    "LZ4",
+    "ZSTD"
+  ],
+  "index_types": [
+    "NONE",
+    "ALL"
+  ],
+  "errors": []
+}

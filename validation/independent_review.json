@@ -1,0 +1,118 @@
+{
+  "created_utc": "2026-10-29T17:41:57.401003+00:00",
+  "repository": {
+    "path": "/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4",
+    "branch": "codex/v4-review-fixes",
+    "head": "8a2760d454afd4d6db575ea879b73150a0976939",
+    "uncommitted_changes": true,
+    "reviewed_file_sha256": {
+      "stage_b_mcap_v4/integrity.py": "ff9e3738473fec4231eec4d39ab1b00ac44c8d957d57fe9244fc2c8bbc660e3a",
+      "stage_b_mcap_v4/operators.py": "7a2da16fb8d16d7559547aad30a06b0b46d7ed5f75300bc19bd7b28f8dc47851",
+      "stage_b_mcap_v4/contracts.py": "8941efc143660c7eb7d15a2b7814028a9cedaaaab953eeada5c7637b3bed0d66",
+      "stage_b_mcap_v4/reporting.py": "38620e0db275ff1584e31dec4d655d81294ba7c617ec8ec6d757971334f1c991",
+      "stage_b_mcap_v4/delivery.py": "f0ba0a96b2e31399fa22e1f89ca8d86d434d5a8eea87c843b0c3e349a3f9022f",
+      "stage_b_mcap_v4/deletion.py": "bedeb24702ae93658d0fad915ec2bc082a3ec3ffcd6168f06a47d11e220ab461",
+      "tests/test_p0_input_contract.py": "e9e9a1a207e0f8783a1741f6bf67856ac6dd7e0356c72f3bb8f36973e2393e4c",
+      "tests/test_serial_pipeline.py": "605a60b20f41518c4f39a36bee1356d7cadbfae4000351d46e2170c278c4b73c",
+      "tests/test_mcap_integration.py": "5a1173117e0c599c7b483e5bc780638ba61406c5adf10f16f8ea36114dd9e59c"
+    }
+  },
+  "environment": {
+    "python_executable": "/usr/bin/python3",
+    "python_version": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "dependencies": {
+      "mcap": "1.3.1",
+      "mcap-protobuf-support": "0.6.0",
+      "numpy": "2.2.6",
+      "pytest": "9.1.1",
+      "zstandard": "0.25.0",
+      "lz4": "4.4.5",
+      "scipy": "1.15.3",
+      "pyarrow": "24.0.0"
+    },
+    "PYTHONPATH": "/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4:/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4/tests:/home/fengchendianer/文档/ChatGPT/算子整理/.analysis-deps",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "scope": {
+    "legal_matrix": "768 combinations of seven Writer boolean flags, three compression types, and two index modes. Each file contains schema, channel, messages, attachment and metadata.",
+    "independent_r4_cases": [
+      "S1 bad mask then S4 exception",
+      "S1 discard with no bad mask then S3 exception",
+      "S1 pass then S2 exception",
+      "S1 rejection then malformed S3 mask",
+      "validated S1 rejection then optional metric extraction error",
+      "four records: kept, rejected with diagnostic error, error, rejected; reload and selectively deliver/delete"
+    ],
+    "real_mcap_container": true,
+    "upstream_numerical_engine": "controlled test double from tests/test_serial_pipeline.py:numerical_engine",
+    "real_upstream_s1_s4_validated": false,
+    "limitations": [
+      "The unavailable SLM_data_curation upstream engine was not run.",
+      "These checks validate local container admission, quality-evidence preservation, counts, durable handoff, delivery and deletion behavior; they do not establish numerical correctness of real S1-S4.",
+      "The legal MCAP matrix covers generated Writer combinations, not all possible legal files."
+    ]
+  },
+  "runs": [
+    {
+      "name": "legal_mcap_matrix",
+      "cwd": "/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4",
+      "command": "env 'PYTHONPATH=/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4:/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4/tests:/home/fengchendianer/文档/ChatGPT/算子整理/.analysis-deps' PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 '/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/independent_mcap_matrix.py'",
+      "started_utc": "2026-10-29T17:41:56.077350+00:00",
+      "finished_utc": "2026-10-29T17:41:56.370340+00:00",
+      "exit_code": 0,
+      "raw_output": "/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/independent-matrix.txt",
+      "raw_output_sha256": "c9e0d6d496860264b97ef483f49ce8cd6f6c15ed262323cbe4fdaf315f429658",
+      "result": {
+        "expected": 768,
+        "passed": 768,
+        "failed": 0,
+        "boolean_flags": [
+          "repeat_channels",
+          "repeat_schemas",
+          "use_chunking",
+          "use_statistics",
+          "use_summary_offsets",
+          "enable_crcs",
+          "enable_data_crcs"
+        ],
+        "compression": [
+          "NONE",
+          "LZ4",
+          "ZSTD"
+        ],
+        "index_types": [
+          "NONE",
+          "ALL"
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "independent_r4",
+      "cwd": "/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4",
+      "command": "env 'PYTHONPATH=/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4:/home/fengchendianer/文档/ChatGPT/算子整理/slm-data-curation-stage-b-operators-v4/tests:/home/fengchendianer/文档/ChatGPT/算子整理/.analysis-deps' PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m pytest -q -p no:cacheprovider '/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/test_independent_quality.py'",
+      "started_utc": "2026-10-29T17:41:56.370412+00:00",
+      "finished_utc": "2026-10-29T17:41:57.392049+00:00",
+      "exit_code": 0,
+      "raw_output": "/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/independent-quality.txt",
+      "raw_output_sha256": "3203da9a6568ec5379469a9996e349706c94be424dac52aab20f1a055bba846a",
+      "result": {
+        "passed": 6,
+        "pytest_output": "......                                                                   [100%]\n6 passed in 0.84s"
+      }
+    }
+  ],
+  "reproduction_scripts": {
+    "independent_mcap_matrix.py": {
+      "path": "/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/independent_mcap_matrix.py",
+      "sha256": "1585aa925a41c10d49bd27a3a721e06874d8e5d2f43c62f11a4b00edf4cc9c28"
+    },
+    "test_independent_quality.py": {
+      "path": "/home/fengchendianer/文档/ChatGPT/算子整理/analysis/v4-review-fixes-20261030/test_independent_quality.py",
+      "sha256": "cc3a60fe61024dc5b6a6e8d66f72f9c86e6ad1fc3812d63f90cc23f09f9951ee"
+    }
+  },
+  "overall_passed": true,
+  "note": "Repository source files were not modified by this evidence capture. The saved R4 test is copied from the earlier temporary independent test; only its explanatory header/comment were clarified."
+}

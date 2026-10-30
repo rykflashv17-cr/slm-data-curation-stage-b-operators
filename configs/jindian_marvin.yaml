@@ -1,5 +1,5 @@
 # Technical test profile: 16d (left 7 + right 7 joints, two gripper widths).
-# Override the input root explicitly. Output contains reports and caches only.
+# Override the input root explicitly. Output contains accepted MCAP copies, normalized intermediates, reports and caches.
 upstream_repo: ../../../../github/SLM_data_curation
 dataset_package: ../dataset_adapters/jindian_marvin
 quality_yaml: ../dataset_adapters/jindian_marvin/quality_stage_b.yaml

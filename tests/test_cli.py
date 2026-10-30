@@ -8,7 +8,10 @@ from types import SimpleNamespace
 import pytest
 from mcap.writer import Writer
 
-from stage_b_mcap_v4 import cli
+import numpy as np
+from stage_b_mcap_v4 import cli, operators
+from stage_b_mcap_v4.contracts import NormalizedEpisode, SourceIdentity, StatisticsBundle
+from stage_b_mcap_v4.spec import GripperGapConfig
 
 
 def _source(path: Path) -> bytes:
@@ -24,22 +27,30 @@ def _source(path: Path) -> bytes:
 
 def _runtime(monkeypatch, root: Path, output: Path, *, stats_failure=False) -> None:
     """Isolate orchestration from numerics; deletion and durable reports are real."""
-    spec = SimpleNamespace(input_root=root, output_root=output)
+    spec = SimpleNamespace(input_root=root, output_root=output, gripper_gap=GripperGapConfig("/left", "/right", 600_000_000))
     monkeypatch.setattr(cli, "load_spec", lambda *args, **kwargs: spec)
     monkeypatch.setattr(cli, "quality_config", lambda spec: None)
-    monkeypatch.setattr(cli, "build_adapter", lambda spec: object())
+    monkeypatch.setattr(operators, "build_adapter", lambda spec: object())
 
     def read(self, ref, spec, cfg, adapter):
         if ref.mcap_path.stem == "error":
             raise ValueError("synthetic unreadable payload")
-        return SimpleNamespace(ref=ref)
+        values = np.ones((4, 1))
+        times = np.arange(4, dtype=np.int64) * 1_000_000_000
+        observed = {"/left": np.array([], dtype=np.int64) if ref.mcap_path.stem == "gap" else times, "/right": times}
+        return NormalizedEpisode(ref, values, values, times, SourceIdentity.capture(ref.mcap_path), observed)
 
-    def stats(self, spec, cfg, refs, **kwargs):
+    def stats(self, batch, spec, cfg, records, **kwargs):
         if stats_failure:
             raise ValueError("synthetic statistics failure")
-        return SimpleNamespace()
+        return StatisticsBundle(SimpleNamespace(num_frames=len(records) * 4), None, None, 0, output / "cache")
 
     def quality(self, episode, spec, cfg, statistics):
+        early = self.precheck(episode, spec)
+        if early is not None:
+            return early
+        if statistics is None:
+            raise ValueError("global statistics unavailable")
         reject = episode.ref.mcap_path.stem == "bad"
         record = {
             "episode_index": episode.ref.episode_index,
@@ -52,8 +63,7 @@ def _runtime(monkeypatch, root: Path, output: Path, *, stats_failure=False) -> N
         return SimpleNamespace(to_record=lambda: record)
 
     monkeypatch.setattr(cli.McapReadOperator, "run", read)
-    monkeypatch.setattr(cli.GlobalStatsOperator, "run", stats)
-    monkeypatch.setattr(cli.QualityDetectionOperator, "precheck", lambda self, episode, spec: None)
+    monkeypatch.setattr(cli.GlobalStatsOperator, "_fit", stats)
     monkeypatch.setattr(cli.QualityDetectionOperator, "run", quality)
 
 
@@ -106,7 +116,9 @@ def test_batch_reports_before_deletion_keeps_good_and_error_sources(
     assert summary["rejected_files"] == 1
     assert summary["failed_episodes"] == 1
     assert summary["deleted_files"] == (1 if mode == "run" else 0)
-    assert not list(output.rglob("*.mcap"))  # v4 never exports a replacement MCAP.
+    assert (output / "accepted" / "good.mcap").read_bytes() == originals[good]
+    assert list((output / "accepted").rglob("*.mcap")) == [output / "accepted" / "good.mcap"]
+    assert summary["exported_files"] == 1
 
 
 def test_global_statistics_failure_retains_all_sources(tmp_path: Path, monkeypatch) -> None:
@@ -122,7 +134,7 @@ def test_global_statistics_failure_retains_all_sources(tmp_path: Path, monkeypat
     assert "statistics failure" in summary["statistics_error"]
 
 
-def test_statistics_failure_also_retains_early_gripper_rejection(tmp_path: Path, monkeypatch) -> None:
+def test_statistics_failure_also_retains_final_gripper_rejection(tmp_path: Path, monkeypatch) -> None:
     root, output = tmp_path / "sources", tmp_path / "reports"
     gap, good = root / "gap.mcap", root / "good.mcap"
     originals = {path: _source(path) for path in (gap, good)}

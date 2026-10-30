@@ -22,6 +22,7 @@ RIGHT_GRIP = "/raw/das/right/state"
 GRIP_TARGET = "/command/das/target"
 TOPICS = (STATE, TARGET, LEFT_GRIP, RIGHT_GRIP, GRIP_TARGET)
 JOINT_NAMES = tuple(f"Joint{i}_{side}" for side in ("L", "R") for i in range(1, 8))
+GRIPPER_FIELDS = {LEFT_GRIP: "left_gripper_width", RIGHT_GRIP: "right_gripper_width"}
 
 
 class Cdr:
@@ -105,9 +106,8 @@ def _find_mcap(ref) -> Path:
 class JindianMarvinAdapter:
     def __init__(self, package_dir: Path):
         self.package_dir = Path(package_dir)
-        self._stride_by_ep: dict[int, int] = {}
 
-    def load_raw(self, ref) -> dict[str, np.ndarray]:
+    def load_raw(self, ref) -> dict:
         from mcap.reader import make_reader
 
         samples: dict[str, list[tuple[int, object]]] = {topic: [] for topic in TOPICS}
@@ -115,6 +115,12 @@ class JindianMarvinAdapter:
             for _schema, channel, message in make_reader(stream).iter_messages(topics=TOPICS):
                 topic = channel.topic
                 value = _named_positions(message.data, trajectory=topic in (TARGET, GRIP_TARGET))
+                if topic in GRIPPER_FIELDS:
+                    # Structural validity belongs to input normalization. Gap
+                    # B02 admits statistical inputs; B03 alone rejects files.
+                    width = value.get(GRIPPER_FIELDS[topic])
+                    if width is None or not np.isfinite(width):
+                        continue
                 if value:
                     samples[topic].append((int(message.log_time), value))
         if not samples[STATE]:
@@ -136,10 +142,9 @@ class JindianMarvinAdapter:
             (15, RIGHT_GRIP, "right_gripper_width"),
         ):
             if not samples[topic]:
-                # Missing measurements remain explicitly unknown. The v4 gap
-                # precheck rejects this source before any numerical scoring or
-                # statistics. If coverage checking is disabled, the reader
-                # rejects these non-finite values instead of trusting zeros.
+                # Preserve unknown values as facts. B02 excludes them from
+                # statistics; B03 diagnoses coverage or records a numerical
+                # error when coverage checking is disabled.
                 state[:, col] = np.nan
                 continue
             # The integrated quality detector checks measurement freshness.
@@ -159,21 +164,33 @@ class JindianMarvinAdapter:
         observed_columns = [col for col in range(16) if col not in missing_columns]
         if not np.isfinite(state[:, observed_columns]).all() or not np.isfinite(action[:, observed_columns]).all():
             raise ValueError("non-finite joint or gripper values")
-        self._stride_by_ep[ref.episode_index] = 2
-        return {"state": state, "action": action, "time_ns": times}
+        return {
+            "state": state, "action": action, "time_ns": times,
+            "valid_measurement_times_ns": {
+                topic: np.asarray([t for t, _ in samples[topic]], dtype=np.int64)
+                for topic in GRIPPER_FIELDS
+            },
+        }
 
-    def to_standard_episode(self, ref, raw: dict[str, np.ndarray], meta: dict) -> StandardEpisode:
+    def to_standard_episode(self, ref, raw: dict, meta: dict) -> StandardEpisode:
         return StandardEpisode(
             episode_index=ref.episode_index,
             num_frames=len(raw["state"]),
             fields={"jindian.state": raw["state"], "jindian.action": raw["action"]},
             camera_keys=["observation.images.camera_reference"],
-            meta=dict(meta),
+            meta={**meta, "quality_timeline": {
+                "frame_times_ns": raw["time_ns"],
+                "valid_measurement_times_ns": raw["valid_measurement_times_ns"],
+            }},
             has_camera_top=True,
         )
 
     def to_quality_arrays(self, standard: StandardEpisode) -> tuple[np.ndarray, np.ndarray]:
         return standard.fields["jindian.state"], standard.fields["jindian.action"]
+
+    def to_quality_timeline(self, standard: StandardEpisode) -> dict:
+        """Metadata for exactly the rows returned by to_quality_arrays()."""
+        return standard.meta["quality_timeline"]
 
 
 def build_adapter(package_dir: Path) -> JindianMarvinAdapter:

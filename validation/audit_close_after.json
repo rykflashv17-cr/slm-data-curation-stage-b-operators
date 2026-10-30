@@ -1,0 +1,26 @@
+{
+  "exit_code": 1,
+  "deleted_files": 2,
+  "audit_error": "OSError: synthetic audit-close EIO",
+  "delivery_status": "complete",
+  "source_exists": [
+    false,
+    false
+  ],
+  "results": [
+    {
+      "episode_index": 0,
+      "source": "/tmp/stage-b-audit-fsync-vuw4heez/sources/first.mcap",
+      "status": "deleted",
+      "deleted_bytes": 570,
+      "source_directory_synced": true
+    },
+    {
+      "episode_index": 1,
+      "source": "/tmp/stage-b-audit-fsync-vuw4heez/sources/second.mcap",
+      "status": "deleted",
+      "deleted_bytes": 570,
+      "source_directory_synced": true
+    }
+  ]
+}

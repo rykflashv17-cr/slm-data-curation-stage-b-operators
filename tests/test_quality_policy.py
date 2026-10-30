@@ -34,7 +34,6 @@ def prepared(tmp_path: Path, upstream_repo: Path):
     episode = QualityEpisode(
         McapEpisodeRef(0, root, source, "."), state, state.copy(),
         np.arange(n, dtype=np.int64) * 40_000_000 + 1_000_000_000,
-        np.zeros_like(state, dtype=bool), np.zeros_like(state, dtype=bool),
         source_identity=SourceIdentity.capture(source),
     )
     statistics = StatisticsBundle(None, None, None, 0, tmp_path / "cache")
